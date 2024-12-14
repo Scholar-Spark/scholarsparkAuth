@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+psycopg2-binary
+pydantic
+pydantic-settings
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
