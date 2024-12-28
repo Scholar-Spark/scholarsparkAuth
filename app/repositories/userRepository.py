@@ -1,6 +1,6 @@
 from typing import Optional, Dict
-from ..schemas.user import UserCreate, UserResponse
-from ..core.security import get_password_hash
+from ..schema.user import UserCreate, UserResponse
+from ..core.securityUtils import get_password_hash
 from ..core.config import settings
 from ...observability.OtelSetup import OTelSetup
 import psycopg2
