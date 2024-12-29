@@ -1,7 +1,7 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from ..core.config import settings
-from ...observability.OtelSetup import OTelSetup
+from scholar_spark_observability.otel import OTelSetup
 
 def get_db_connection():
     otel = OTelSetup.get_instance()

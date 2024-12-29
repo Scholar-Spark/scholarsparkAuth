@@ -1,13 +1,21 @@
-# main.py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.router import router as api_router
+from scholar_spark_observability.otel import OTelSetup
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+
+otel = OTelSetup.get_instance(
+    service_name=settings.OTEL_SERVICE_NAME,
+    endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT
+)
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION
 )
+
+otel.instrument_app(app)
 
 # CORS middleware
 app.add_middleware(

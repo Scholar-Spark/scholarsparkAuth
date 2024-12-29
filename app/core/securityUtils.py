@@ -3,7 +3,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from .config import settings
-from ...observability.OtelSetup import OTelSetup
+from scholar_spark_observability.otel import OTelSetup
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
