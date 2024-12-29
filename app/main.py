@@ -4,7 +4,6 @@ from scholar_spark_observability.otel import OTelSetup
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-
 otel = OTelSetup.get_instance(
     service_name=settings.OTEL_SERVICE_NAME,
     endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT
