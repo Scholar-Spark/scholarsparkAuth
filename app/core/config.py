@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import List
 
 class Settings(BaseSettings):
     APP_NAME: str = "Auth Service"
@@ -14,14 +14,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     
     # CORS
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: List[str] = ["*"]
     
-    # OpenTelemetry
+    # OpenTelemetry Settings
     OTEL_SERVICE_NAME: str = "auth-service"
-    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = "http://localhost:4317"
+    OTEL_SERVICE_VERSION: str = "1.0.0"
+    OTEL_ENVIRONMENT: str = "development"
+    OTEL_TEMPO_ENDPOINT: str = "http://tempo:4318/v1/traces"
+    OTEL_DEBUG: bool = True
 
-    # This is a special Pydantic subclass that is automatically loaded when the Settings class is instantiated. Currently its only function is to load the environment variables from the .env file. If the environment variable loaded has the same property name as the class property, it will override the default value.
-    class Config: 
+    class Config:
         case_sensitive = True
         env_file = ".env"
 

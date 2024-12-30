@@ -1,28 +1,23 @@
-from app.core.config import settings
-from app.api.v1.router import router as api_router
-from scholar_spark_observability.otel import OTelSetup, ExporterType
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import settings
+from app.api.v1.router import router as api_router
+from scholarSparkObservability.core import OTelSetup
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
 # Initialize OpenTelemetry
 otel = OTelSetup.initialize(
     service_name=settings.OTEL_SERVICE_NAME,
     service_version=settings.OTEL_SERVICE_VERSION,
+    exporter=ConsoleSpanExporter(),  # Use your desired exporter here
     environment=settings.OTEL_ENVIRONMENT,
-    debug=settings.OTEL_DEBUG,
-    exporters=[{
-        "type": ExporterType.TEMPO,
-        "endpoint": settings.OTEL_TEMPO_ENDPOINT,
-        "headers": {"Content-Type": "application/x-protobuf"}
-    }]
+    debug=settings.OTEL_DEBUG
 )
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION
 )
-
-otel.instrument_app(app)
 
 # CORS middleware
 app.add_middleware(
@@ -36,7 +31,7 @@ app.add_middleware(
 # Include routers
 app.include_router(api_router, prefix="/api/v1")
 
-# Optional: Add a health check endpoint
+# Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

@@ -2,7 +2,7 @@ from typing import Optional, Dict
 from ..schema.user import UserCreate, UserResponse
 from ..core.securityUtils import get_password_hash
 from ..core.config import settings
-from scholar_spark_observability.otel import OTelSetup
+from scholarSparkObservability.core import OTelSetup
 import psycopg2
 from psycopg2.extras import RealDictCursor
 

@@ -3,14 +3,17 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from .config import settings
-from scholar_spark_observability.otel import OTelSetup
+from scholarSparkObservability.core import OTelSetup
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-otel = OTelSetup.get_instance()
+
+def get_otel():
+    return OTelSetup.get_instance()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
+    otel = get_otel()
     with otel.create_span("verify_password", {
         "security.operation": "password_verification"
     }) as span:
@@ -26,6 +29,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
+    otel = get_otel()
     with otel.create_span("get_password_hash", {
         "security.operation": "password_hashing"
     }) as span:

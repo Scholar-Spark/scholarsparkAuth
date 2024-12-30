@@ -20,7 +20,8 @@ opentelemetry-api = "^1.20.0"
 opentelemetry-sdk = "^1.20.0"
 opentelemetry-instrumentation-fastapi = "^0.41b0"
 email-validator = "^2.2.0"
-scholar-spark-observability = "^0.5.1"
+scholar-spark-observability = "^0.8.0"
+
 
 [build-system]
 requires = ["poetry-core"]
