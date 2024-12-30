@@ -1,12 +1,20 @@
 from app.core.config import settings
 from app.api.v1.router import router as api_router
-from scholar_spark_observability.otel import OTelSetup
+from scholar_spark_observability.otel import OTelSetup, ExporterType
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-otel = OTelSetup.get_instance(
+# Initialize OpenTelemetry
+otel = OTelSetup.initialize(
     service_name=settings.OTEL_SERVICE_NAME,
-    endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT
+    service_version=settings.OTEL_SERVICE_VERSION,
+    environment=settings.OTEL_ENVIRONMENT,
+    debug=settings.OTEL_DEBUG,
+    exporters=[{
+        "type": ExporterType.TEMPO,
+        "endpoint": settings.OTEL_TEMPO_ENDPOINT,
+        "headers": {"Content-Type": "application/x-protobuf"}
+    }]
 )
 
 app = FastAPI(
