@@ -13,7 +13,7 @@ schema "auth" {
       type = "varchar(255)"
       not_null = true
     }
-    column "is_active" {4   
+    column "is_active" {
       type = "boolean"
       default = "true"
     }
