@@ -1,5 +1,5 @@
 from typing import Optional, Dict
-from ..schema.user import UserCreate, UserResponse
+from ..schema.user import User, UserResponse
 from ..core.securityUtils import get_password_hash
 from ..core.config import settings
 from scholarSparkObservability.core import OTelSetup
@@ -27,22 +27,22 @@ class UserRepository:
                 otel.record_exception(span, e)
                 raise
 
-    def create_user(self, user: UserCreate) -> Optional[Dict]:
+    def create_user(self, user: User) -> Optional[Dict]:
         with self.otel.create_span("create_user", {
             "user.email": user.email
         }) as span:
-            query = """
-                INSERT INTO users (email, hashed_password)
-                VALUES (%s, %s)
-                RETURNING id, email, is_active;
-            """
+       
             
             try:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            query,
+                            """
+                            INSERT INTO users (email, hashed_password)
+                            VALUES (%s, %s)
+                            RETURNING id, email, is_active;
+                            """,
                             (user.email, get_password_hash(user.password))
                         )
                         result = cur.fetchone()

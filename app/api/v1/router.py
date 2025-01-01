@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from ...schema.user import UserCreate, UserResponse
+from ...schema.user import User, UserResponse
 from ...repositories.userRepository import UserRepository
 from ...core.securityUtils import verify_password, create_access_token
 from datetime import timedelta
@@ -10,7 +10,7 @@ router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 @router.post("/register", response_model=UserResponse)
-async def register(user: UserCreate):
+async def register(user: User):
     user_repo = UserRepository()
     existing_user = user_repo.get_by_email(user.email)
     if existing_user:
