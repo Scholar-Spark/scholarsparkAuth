@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
     
     # CORS
     CORS_ORIGINS: List[str] = ["*"]

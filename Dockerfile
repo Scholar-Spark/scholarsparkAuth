@@ -22,11 +22,9 @@ CMD until pg_isready -h db -U user; do \
       echo "Waiting for PostgreSQL..."; \
       sleep 2; \
     done && \
-    echo "Creating database if it doesn't exist..." && \
-    PGPASSWORD=password psql -h db -U user -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'auth'" | grep -q 1 || \
-    PGPASSWORD=password psql -h db -U user -d postgres -c "CREATE DATABASE auth" && \
     echo "Generating migration hash..." && \
     atlas migrate hash --env docker && \
     echo "Applying migrations..." && \
     atlas migrate apply --env docker && \
     poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
