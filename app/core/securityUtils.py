@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -46,7 +46,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token using a shallow copy of the data."""
-    otel = get_otel()  # Get instance when needed
+    otel = get_otel()
     with otel.create_span("create_access_token", {
         "security.operation": "token_creation",
         "token.type": "access_token"
@@ -54,23 +54,20 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         try:
             to_encode = data.copy()
             
-            # Set expiration
+            # Always use UTC for tokens
             if expires_delta:
-                expire = datetime.utcnow() + expires_delta
-                span.set_attributes({
-                    "token.expiry.custom": True,
-                    "token.expiry.minutes": expires_delta.total_seconds() / 60
-                })
+                expire = datetime.now(timezone.utc) + expires_delta
             else:
-                expire = datetime.utcnow() + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-                span.set_attributes({
-                    "token.expiry.custom": False,
-                    "token.expiry.minutes": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-                })
+                expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
             
-            to_encode.update({"expiry": expire})
+            # Standard JWT claims
+            to_encode.update({
+                "exp": expire,  # Standard JWT 'exp' claim
+                "iat": datetime.now(timezone.utc),  # Issued at
+                "nbf": datetime.now(timezone.utc),  # Not valid before
+            })
             
-            # Create JWT token
+            # jose library handles datetime serialization automatically
             encoded_jwt = jwt.encode(
                 to_encode, 
                 settings.JWT_SECRET_KEY, 
@@ -79,7 +76,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
             
             span.set_attributes({
                 "token.created": True,
-                "token.algorithm": settings.JWT_ALGORITHM
+                "token.algorithm": settings.JWT_ALGORITHM,
+                "token.expiry": expire.isoformat()
             })
             
             return encoded_jwt
