@@ -55,20 +55,22 @@ class UserRepository:
                 conn.close()
 
     def get_by_email(self, email: str) -> Optional[Dict]:
+        conn = None
         with self.otel.create_span("get_user_by_email", {
             "user.email": email
         }) as span:
-            query = """
-                SELECT id, email, hashed_password, is_active 
-                FROM users 
-                WHERE email = %s;
-            """
-            
             try:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
-                        cur.execute(query, (email,))
+                        cur.execute(
+                            """
+                            SELECT id, email, hashed_password, is_active 
+                            FROM users 
+                            WHERE email = %s;
+                            """,
+                            (email,)
+                        )
                         result = cur.fetchone()
                         if result:
                             span.set_attributes({"user.id": result["id"]})
@@ -77,4 +79,5 @@ class UserRepository:
                 self.otel.record_exception(span, e)
                 raise
             finally:
-                conn.close()
+                if conn is not None:
+                    conn.close()
