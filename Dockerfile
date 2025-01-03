@@ -26,5 +26,5 @@ CMD until pg_isready -h db -U user; do \
     atlas migrate hash --env docker && \
     echo "Applying migrations..." && \
     atlas migrate apply --env docker && \
-    poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
