@@ -9,11 +9,12 @@ from scholarSparkObservability.core import OTelSetup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_otel():
+    """Lazy initialization of OpenTelemetry instance"""
     return OTelSetup.get_instance()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    otel = get_otel()
+    otel = get_otel()  # Get instance when needed
     with otel.create_span("verify_password", {
         "security.operation": "password_verification"
     }) as span:
@@ -45,6 +46,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token using a shallow copy of the data."""
+    otel = get_otel()  # Get instance when needed
     with otel.create_span("create_access_token", {
         "security.operation": "token_creation",
         "token.type": "access_token"

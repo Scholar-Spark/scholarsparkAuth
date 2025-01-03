@@ -1,7 +1,7 @@
 FROM python:3.8-slim
 
 # Set working directory to the root of the project
-WORKDIR /project
+WORKDIR /app
 
 # Install PostgreSQL client and Atlas
 RUN apt-get update && \
@@ -10,7 +10,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy all files
-COPY . /project
+COPY . /app
 
 # Install Python dependencies
 RUN pip install --no-cache-dir poetry && poetry install
