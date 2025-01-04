@@ -18,13 +18,13 @@ RUN pip install --no-cache-dir poetry && poetry install
 EXPOSE 8000
 
 # Wait for database and apply migrations
-CMD until pg_isready -h db -U user; do \
+CMD until pg_isready -h postgres -U user; do \
       echo "Waiting for PostgreSQL..."; \
       sleep 2; \
     done && \
     echo "Generating migration hash..." && \
-    atlas migrate hash --env docker && \
+    atlas migrate hash --env kube && \
     echo "Applying migrations..." && \
-    atlas migrate apply --env docker && \
+    atlas migrate apply --env kube && \
     poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 

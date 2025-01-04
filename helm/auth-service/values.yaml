@@ -1,0 +1,26 @@
+# Default configuration
+image:
+  repository: auth-service
+  tag: latest
+  pullPolicy: Never
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8000
+
+database:
+  host: postgres
+  port: 5432
+  name: auth
+  user: user
+  password: password
+
+jwt:
+  secretKey: "your-secret-key-here"
+
+observability:
+  tempo:
+    enabled: true
+    endpoint: http://tempo:4318 

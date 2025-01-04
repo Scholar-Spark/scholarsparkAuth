@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.database.user }}:{{ .Values.database.password }}@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.database.user }}"
+            - name: POSTGRES_PASSWORD
+              value: "{{ .Values.database.password }}"
+            - name: POSTGRES_DB
+              value: "{{ .Values.database.name }}"
+            - name: JWT_SECRET_KEY
+              value: "{{ .Values.jwt.secretKey }}" 
