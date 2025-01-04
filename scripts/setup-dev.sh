@@ -207,6 +207,15 @@ print_dev_info() {
 
 # Main setup process
 main() {
+    # Load environment variables from .env file
+    if [ -f .env ]; then
+        echo -e "${BLUE}Loading environment variables from .env file...${NC}"
+        export $(cat .env | grep -v '^#' | xargs)
+    else
+        echo -e "${RED}No .env file found. Please create one based on .env.example${NC}"
+        exit 1
+    fi
+
     echo -e "${BLUE}Setting up development environment...${NC}"
     
     # Check Docker first

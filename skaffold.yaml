@@ -21,6 +21,11 @@ deploy:
         createNamespace: true
         valuesFiles:
           - helm/auth-service/values.yaml
+        setValueTemplates:
+          database.user: "{{.POSTGRES_USER}}"
+          database.password: "{{.POSTGRES_PASSWORD}}"
+          database.name: "{{.POSTGRES_DB}}"
+          jwt.secretKey: "{{.JWT_SECRET_KEY}}"
 portForward:
   - resourceType: service
     resourceName: auth-service
