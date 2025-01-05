@@ -29,3 +29,16 @@ spec:
               value: "{{ .Values.database.name }}"
             - name: JWT_SECRET_KEY
               value: "{{ .Values.jwt.secretKey }}" 
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: scholar-spark-dev
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8000
+  type: {{ .Values.service.type }} 
