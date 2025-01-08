@@ -285,66 +285,112 @@ setup_helm_registry() {
     echo -e "${GREEN}Successfully authenticated with Helm registry${NC}"
 }
 
+# Function to install shared infrastructure
+install_shared_infra() {
+    echo -e "${BLUE}Installing shared infrastructure...${NC}"
+    
+    # Add the helm repo and update
+    echo -e "${BLUE}Step 1/3: Pulling shared infrastructure chart...${NC}"
+    helm pull oci://ghcr.io/polyhistor/scholarsparksharedinfrastructure/charts/shared-infra --version 0.1.0 || {
+        echo -e "${RED}Failed to pull shared infrastructure chart${NC}"
+        exit 1
+    }
+    
+    # Install/upgrade with increased timeout and better debugging
+    echo -e "${BLUE}Step 2/3: Installing components (this may take several minutes)...${NC}"
+    helm upgrade --install shared-infra ./shared-infra-0.1.0.tgz \
+        --namespace scholar-spark-dev \
+        --create-namespace \
+        --wait \
+        --timeout 10m \
+        --debug \
+        --atomic || {
+        echo -e "${RED}Failed to install shared infrastructure${NC}"
+        echo -e "${YELLOW}Checking pod status...${NC}"
+        kubectl get pods -n scholar-spark-dev
+        echo -e "${YELLOW}Checking Loki pod details...${NC}"
+        kubectl describe pod -n scholar-spark-dev -l app=loki
+        echo -e "${YELLOW}Checking Loki pod logs...${NC}"
+        kubectl logs -n scholar-spark-dev -l app=loki --tail=50
+        echo -e "${YELLOW}Checking available resources...${NC}"
+        kubectl describe nodes
+        exit 1
+    }
+    
+    # Clean up the downloaded chart
+    echo -e "${BLUE}Step 3/3: Cleaning up...${NC}"
+    rm -f ./shared-infra-*.tgz
+    
+    echo -e "${GREEN}Successfully installed shared infrastructure${NC}"
+}
+
 # Main setup process
 main() {
     # Load environment variables from .env file
     if [ -f .env ]; then
-        echo -e "${BLUE}Loading environment variables from .env file...${NC}"
+        echo -e "${BLUE}Step 1: Loading environment variables from .env file...${NC}"
         export $(cat .env | grep -v '^#' | xargs)
     else
-        echo -e "${RED}No .env file found. Please create one based on .env.example${NC}"
+        echo -e "${RED}Error: No .env file found. Please create one based on .env.example${NC}"
         exit 1
     fi
 
-    echo -e "${BLUE}Setting up development environment...${NC}"
+    echo -e "${BLUE}Step 2: Setting up development environment...${NC}"
     
     # Check Docker first
     check_docker
     
     # Detect OS and install dependencies
     OS=$(detect_os)
-    echo -e "${BLUE}Detected OS: $OS${NC}"
+    echo -e "${BLUE}Step 3: Detected OS: $OS${NC}"
     
     # Install dependencies if needed
     if [[ ! -x "$(command -v minikube)" ]] || \
        [[ ! -x "$(command -v kubectl)" ]] || \
        [[ ! -x "$(command -v skaffold)" ]] || \
        [[ ! -x "$(command -v helm)" ]]; then
+        echo -e "${BLUE}Step 4: Installing required tools...${NC}"
         install_dependencies "$OS"
     fi
     
     # Setup Helm registry authentication
+    echo -e "${BLUE}Step 5: Setting up Helm registry authentication...${NC}"
     setup_helm_registry
+    
+    # Install shared infrastructure
+    echo -e "${BLUE}Step 6: Installing shared infrastructure...${NC}"
+    install_shared_infra
 
     # Start minikube if not running
     if ! minikube status &> /dev/null; then
-        echo -e "${BLUE}Starting Minikube...${NC}"
+        echo -e "${BLUE}Step 7: Starting Minikube...${NC}"
         minikube start --driver=docker
     fi
     
     # Configure Docker to use minikube's Docker daemon
-    echo -e "${BLUE}Configuring Docker environment...${NC}"
+    echo -e "${BLUE}Step 8: Configuring Docker environment...${NC}"
     eval $(minikube docker-env)
     
     # Create namespace if it doesn't exist
     if ! kubectl get namespace scholar-spark-dev &> /dev/null; then
-        echo -e "${BLUE}Creating development namespace...${NC}"
+        echo -e "${BLUE}Step 9: Creating development namespace...${NC}"
         kubectl create namespace scholar-spark-dev
     fi
 
     # Start skaffold in the background
-    echo -e "${BLUE}Starting Skaffold...${NC}"
+    echo -e "${BLUE}Step 10: Starting Skaffold...${NC}"
     skaffold dev --port-forward &
     SKAFFOLD_PID=$!
 
     # Wait for service to be ready and get URL
-    echo -e "${BLUE}Waiting for service to be ready...${NC}"
+    echo -e "${BLUE}Step 11: Waiting for service to be ready...${NC}"
     sleep 10  # Give skaffold some time to start deployment
 
     # Get service URL once and store it
     SERVICE_URL=$(get_service_url)
     
     # Print developer-friendly information
+    echo -e "${BLUE}Step 12: Displaying development environment information...${NC}"
     print_dev_info
 
     # Wait for skaffold to finish
