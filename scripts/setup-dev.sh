@@ -51,12 +51,12 @@ install_dependencies() {
                 echo -e "${YELLOW}Installing Homebrew...${NC}"
                 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             fi
-            brew install minikube kubectl skaffold helm
+            brew install minikube kubectl skaffold helm yq
             ;;
             
         "ubuntu"|"debian")
             sudo apt-get update
-            sudo apt-get install -y curl wget apt-transport-https
+            sudo apt-get install -y curl wget apt-transport-https yq
             
             # Install Helm
             curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
@@ -285,43 +285,88 @@ setup_helm_registry() {
     echo -e "${GREEN}Successfully authenticated with Helm registry${NC}"
 }
 
-# Function to install shared infrastructure
-install_shared_infra() {
+# Function to clone/update manifest repository
+setup_manifest() {
+    echo -e "${BLUE}Setting up development manifest...${NC}"
+    
+    MANIFEST_DIR="$HOME/.scholar-spark/manifest"
+    MANIFEST_REPO="https://github.com/Polyhistor/scholarSparkDevManifest.git"
+    
+    if [ ! -d "$MANIFEST_DIR" ]; then
+        echo -e "${BLUE}Cloning manifest repository...${NC}"
+        mkdir -p "$MANIFEST_DIR"
+        git clone "$MANIFEST_REPO" "$MANIFEST_DIR" || {
+            echo -e "${RED}Failed to clone manifest repository${NC}"
+            exit 1
+        }
+    else
+        echo -e "${BLUE}Updating manifest repository...${NC}"
+        git -C "$MANIFEST_DIR" pull || {
+            echo -e "${RED}Failed to update manifest repository${NC}"
+            exit 1
+        }
+    fi
+    
+    echo -e "${GREEN}Successfully setup manifest${NC}"
+}
+
+# Function to apply manifest configuration
+apply_manifest() {
+    echo -e "${BLUE}Applying manifest configuration...${NC}"
+    
+    MANIFEST_DIR="$HOME/.scholar-spark/manifest"
+    MANIFEST_FILE="$MANIFEST_DIR/manifest.yaml"
+    
+    # Verify manifest file exists
+    if [ ! -f "$MANIFEST_FILE" ]; then
+        echo -e "${RED}Manifest file not found at $MANIFEST_FILE${NC}"
+        exit 1
+    }
+    
+    # Parse namespace from manifest
+    NAMESPACE=$(yq e '.dev-environment.namespace' "$MANIFEST_FILE")
+    echo -e "${BLUE}Using namespace: $NAMESPACE${NC}"
+    
+    # Create namespace if it doesn't exist
+    if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
+        kubectl create namespace "$NAMESPACE"
+    fi
+    
+    # Install shared infrastructure charts
     echo -e "${BLUE}Installing shared infrastructure...${NC}"
     
-    # Add the helm repo and update
-    echo -e "${BLUE}Step 1/3: Pulling shared infrastructure chart...${NC}"
-    helm pull oci://ghcr.io/polyhistor/scholarsparksharedinfrastructure/charts/shared-infra --version 0.1.0 || {
-        echo -e "${RED}Failed to pull shared infrastructure chart${NC}"
+    # Read chart details from manifest
+    CHART_REPO=$(yq e '.shared-infrastructure.charts[0].repository' "$MANIFEST_FILE")
+    CHART_VERSION=$(yq e '.shared-infrastructure.charts[0].version' "$MANIFEST_FILE")
+    CHART_NAME=$(yq e '.shared-infrastructure.charts[0].name' "$MANIFEST_FILE")
+    
+    # Pull and install chart
+    echo -e "${BLUE}Installing chart: $CHART_NAME from $CHART_REPO${NC}"
+    helm pull "$CHART_REPO/$CHART_NAME" --version "$CHART_VERSION" || {
+        echo -e "${RED}Failed to pull chart${NC}"
         exit 1
     }
     
-    # Install/upgrade with increased timeout and better debugging
-    echo -e "${BLUE}Step 2/3: Installing components (this may take several minutes)...${NC}"
-    helm upgrade --install shared-infra ./shared-infra-0.1.0.tgz \
-        --namespace scholar-spark-dev \
-        --create-namespace \
-        --wait \
-        --timeout 10m \
-        --debug \
-        --atomic || {
-        echo -e "${RED}Failed to install shared infrastructure${NC}"
-        echo -e "${YELLOW}Checking pod status...${NC}"
-        kubectl get pods -n scholar-spark-dev
-        echo -e "${YELLOW}Checking Loki pod details...${NC}"
-        kubectl describe pod -n scholar-spark-dev -l app=loki
-        echo -e "${YELLOW}Checking Loki pod logs...${NC}"
-        kubectl logs -n scholar-spark-dev -l app=loki --tail=50
-        echo -e "${YELLOW}Checking available resources...${NC}"
-        kubectl describe nodes
+    # Extract values from manifest and create temporary values file
+    TMP_VALUES=$(mktemp)
+    yq e '.shared-infrastructure.charts[0].values' "$MANIFEST_FILE" > "$TMP_VALUES"
+    
+    # Install/upgrade the chart
+    helm upgrade --install "$CHART_NAME" "./$CHART_NAME-$CHART_VERSION.tgz" \
+        --namespace "$NAMESPACE" \
+        --values "$TMP_VALUES" \
+        --wait || {
+        echo -e "${RED}Failed to install chart${NC}"
+        rm -f "$TMP_VALUES"
+        rm -f "./$CHART_NAME-$CHART_VERSION.tgz"
         exit 1
     }
     
-    # Clean up the downloaded chart
-    echo -e "${BLUE}Step 3/3: Cleaning up...${NC}"
-    rm -f ./shared-infra-*.tgz
+    # Cleanup
+    rm -f "$TMP_VALUES"
+    rm -f "./$CHART_NAME-$CHART_VERSION.tgz"
     
-    echo -e "${GREEN}Successfully installed shared infrastructure${NC}"
+    echo -e "${GREEN}Successfully applied manifest configuration${NC}"
 }
 
 # Main setup process
@@ -357,9 +402,9 @@ main() {
     echo -e "${BLUE}Step 5: Setting up Helm registry authentication...${NC}"
     setup_helm_registry
     
-    # Install shared infrastructure
-    echo -e "${BLUE}Step 6: Installing shared infrastructure...${NC}"
-    install_shared_infra
+    # Setup and apply manifest
+    setup_manifest
+    apply_manifest
 
     # Start minikube if not running
     if ! minikube status &> /dev/null; then
