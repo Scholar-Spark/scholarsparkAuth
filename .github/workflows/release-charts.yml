@@ -1,0 +1,32 @@
+name: Release Charts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      # Setup OCI Registry (e.g., GitHub Container Registry)
+      - name: Login to GHCR
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Package and push charts
+      - name: Package and Push Charts
+        run: |
+          for chart in charts/*; do
+            if [ -d "$chart" ]; then
+              helm package $chart
+              helm push ${chart##*/}-*.tgz oci://ghcr.io/${{ github.repository }}/charts
+            fi
+          done 

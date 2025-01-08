@@ -205,6 +205,86 @@ print_dev_info() {
     echo -e "${YELLOW}Starting development server...${NC}\n"
 }
 
+# Function to setup Helm registry authentication
+setup_helm_registry() {
+    echo -e "${BLUE}Setting up Helm registry authentication...${NC}"
+    
+    # Check for required tools
+    for cmd in gh jq; do
+        if ! command -v $cmd &> /dev/null; then
+            case $cmd in
+                gh)
+                    echo -e "${YELLOW}Installing GitHub CLI...${NC}"
+                    case $OS in
+                        "macos")
+                            brew install gh
+                            ;;
+                        "ubuntu"|"debian")
+                            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+                            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+                            sudo apt update
+                            sudo apt install -y gh
+                            ;;
+                        "fedora"|"rhel"|"centos")
+                            sudo dnf install -y gh
+                            ;;
+                        "arch"|"manjaro")
+                            sudo pacman -S --noconfirm github-cli
+                            ;;
+                    esac
+                    ;;
+                jq)
+                    echo -e "${YELLOW}Installing jq...${NC}"
+                    case $OS in
+                        "macos")
+                            brew install jq
+                            ;;
+                        "ubuntu"|"debian")
+                            sudo apt update && sudo apt install -y jq
+                            ;;
+                        "fedora"|"rhel"|"centos")
+                            sudo dnf install -y jq
+                            ;;
+                        "arch"|"manjaro")
+                            sudo pacman -S --noconfirm jq
+                            ;;
+                    esac
+                    ;;
+            esac
+        fi
+    done
+
+    # GitHub login if not already authenticated
+    if ! gh auth status &> /dev/null; then
+        echo -e "${YELLOW}Please login to GitHub...${NC}"
+        if [[ "$OSTYPE" == "darwin"* ]] || [ -n "$DISPLAY" ]; then
+            gh auth login --git-protocol ssh --web
+        else
+            echo -e "${YELLOW}Please visit https://github.com/login/device in your browser${NC}"
+            gh auth login --git-protocol ssh --web
+        fi
+    fi
+
+    # Get GitHub token
+    GITHUB_USER=$(gh api user | jq -r .login)
+    echo -e "${GREEN}Authenticated as: ${GITHUB_USER}${NC}"
+    
+    TOKEN=$(gh auth token)
+    if [ -z "$TOKEN" ]; then
+        echo -e "${RED}Failed to get GitHub token${NC}"
+        exit 1
+    fi
+
+    # Login to Helm registry
+    echo -e "${BLUE}Logging into Helm registry...${NC}"
+    if ! helm registry login ghcr.io -u "$GITHUB_USER" -p "$TOKEN"; then
+        echo -e "${RED}Failed to login to Helm registry${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}Successfully authenticated with Helm registry${NC}"
+}
+
 # Main setup process
 main() {
     # Load environment variables from .env file
@@ -233,6 +313,9 @@ main() {
         install_dependencies "$OS"
     fi
     
+    # Setup Helm registry authentication
+    setup_helm_registry
+
     # Start minikube if not running
     if ! minikube status &> /dev/null; then
         echo -e "${BLUE}Starting Minikube...${NC}"
