@@ -51,3 +51,10 @@ logs/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Helm chart artifacts
+*.tgz
+# Temporary values files
+tmp-*
+# Local development artifacts
+.scholar-spark/

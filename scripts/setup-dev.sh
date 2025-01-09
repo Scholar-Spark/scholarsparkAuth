@@ -7,6 +7,49 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Function to cleanup resources
+cleanup() {
+    echo -e "\n🧹 ${BLUE}Cleaning up resources...${NC}"
+    
+    # Set default namespace if manifest doesn't exist
+    NAMESPACE="scholar-spark-dev"
+    
+    # Try to get namespace from manifest if it exists and yq is available
+    if [ -f "$HOME/.scholar-spark/manifest/manifest.yaml" ] && command -v yq &>/dev/null; then
+        TEMP_NAMESPACE=$(yq '.dev-environment.namespace' "$HOME/.scholar-spark/manifest/manifest.yaml" 2>/dev/null)
+        if [ ! -z "$TEMP_NAMESPACE" ] && [ "$TEMP_NAMESPACE" != "null" ]; then
+            NAMESPACE="$TEMP_NAMESPACE"
+        fi
+    fi
+    
+    # Delete namespace if it exists
+    if kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        echo -e "🗑️  ${BLUE}Deleting namespace $NAMESPACE...${NC}"
+        kubectl delete namespace "$NAMESPACE" --timeout=2m || {
+            echo -e "${YELLOW}Force deleting namespace...${NC}"
+            kubectl delete namespace "$NAMESPACE" --force --grace-period=0
+        }
+    fi
+    
+    # Stop minikube if it's running
+    if minikube status &>/dev/null; then
+        echo -e "🛑 ${BLUE}Stopping minikube cluster...${NC}"
+        minikube stop
+    fi
+    
+    echo -e "✨ ${GREEN}Cleanup completed${NC}"
+}
+
+# Function to handle script interruption
+handle_interrupt() {
+    echo -e "\n\n⚠️  ${YELLOW}Script interrupted. Cleaning up...${NC}"
+    cleanup
+    exit 1
+}
+
+# Register the interrupt handler
+trap handle_interrupt SIGINT SIGTERM
+
 # Function to get project name from pyproject.toml
 get_project_name() {
     if [[ -f "pyproject.toml" ]]; then
@@ -513,42 +556,41 @@ apply_manifest() {
         exit 1
     }
     
-    # Wait specifically for Loki to be ready with more detailed status checks
+    # Wait specifically for Loki to be ready
     echo -e "\n${BLUE}Waiting for Loki to be ready...${NC}"
     local retries=0
     local max_retries=30
     
-    # Debug: Show current namespace and deployments
-    echo -e "${YELLOW}Current deployments in namespace $NAMESPACE:${NC}"
-    kubectl get deployments -n "$NAMESPACE"
-    
     while [ $retries -lt $max_retries ]; do
-        # Check if deployment exists first
-        if ! kubectl get deployment -n "$NAMESPACE" "$CHART_NAME" &>/dev/null; then
-            echo -e "\n${YELLOW}Deployment $CHART_NAME not found in namespace $NAMESPACE. Waiting...${NC}"
-            retries=$((retries + 1))
-            sleep 2
-            continue
+        # Get the Loki pod name
+        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=loki -o name | head -n 1)
+        
+        if [ ! -z "$LOKI_POD" ]; then
+            # Check pod status
+            POD_STATUS=$(kubectl get "$LOKI_POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
+            
+            if [ "$POD_STATUS" = "Error" ] || [ "$POD_STATUS" = "CrashLoopBackOff" ]; then
+                echo -e "\n${RED}Loki pod is in $POD_STATUS state. Checking logs:${NC}"
+                kubectl logs "$LOKI_POD" -n "$NAMESPACE" --previous || true
+                echo -e "\n${YELLOW}Pod events:${NC}"
+                kubectl describe "$LOKI_POD" -n "$NAMESPACE" | grep -A 10 "Events:"
+                exit 1
+            fi
+            
+            # Check if pod is ready
+            READY_STATUS=$(kubectl get "$LOKI_POD" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[0].ready}')
+            if [ "$READY_STATUS" = "true" ]; then
+                echo -e "\n${GREEN}Loki is ready!${NC}"
+                break
+            fi
         fi
         
-        # Check deployment status
-        READY_REPLICAS=$(kubectl get deployment -n "$NAMESPACE" "$CHART_NAME" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-        if [ "$READY_REPLICAS" = "1" ]; then
-            echo -e "\n${GREEN}$CHART_NAME is ready!${NC}"
-            break
-        fi
-        
-        # Every 5 retries, show detailed status
+        # Every 5 retries, show status
         if [ $((retries % 5)) -eq 0 ]; then
-            echo -e "\n${YELLOW}Current status in namespace $NAMESPACE:${NC}"
-            echo -e "\n${YELLOW}Deployments:${NC}"
-            kubectl get deployments -n "$NAMESPACE"
-            echo -e "\n${YELLOW}Pods:${NC}"
-            kubectl get pods -n "$NAMESPACE"
+            echo -e "\n${YELLOW}Current Loki status:${NC}"
+            kubectl get pods -n "$NAMESPACE" -l app=loki
             echo -e "\n${YELLOW}Recent events:${NC}"
-            kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | tail -n 5
-            echo -e "\n${YELLOW}Storage:${NC}"
-            kubectl get pvc -n "$NAMESPACE"
+            kubectl get events -n "$NAMESPACE" --field-selector involvedObject.name=loki --sort-by='.lastTimestamp' | tail -n 5
         fi
         
         echo -n "."
@@ -557,11 +599,11 @@ apply_manifest() {
     done
     
     if [ $retries -eq $max_retries ]; then
-        echo -e "\n${RED}Timeout waiting for $CHART_NAME to be ready in namespace $NAMESPACE${NC}"
-        echo -e "\n${YELLOW}Final status:${NC}"
-        kubectl get all -n "$NAMESPACE"
-        echo -e "\n${YELLOW}Events:${NC}"
-        kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | tail -n 10
+        echo -e "\n${RED}Timeout waiting for Loki to be ready${NC}"
+        echo -e "\n${YELLOW}Final pod status:${NC}"
+        kubectl get pods -n "$NAMESPACE" -l app=loki
+        echo -e "\n${YELLOW}Pod logs:${NC}"
+        kubectl logs "$LOKI_POD" -n "$NAMESPACE" --previous || true
         exit 1
     fi
     
@@ -582,6 +624,10 @@ main() {
         echo -e "${RED}Error: No .env file found. Please create one based on .env.example${NC}"
         exit 1
     fi
+
+    # Perform initial cleanup
+    echo -e "\n🧹 ${BLUE}Performing initial cleanup...${NC}"
+    cleanup
 
     echo -e "${BLUE}Setting up development environment...${NC}"
     
