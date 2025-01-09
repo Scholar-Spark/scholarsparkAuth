@@ -51,12 +51,17 @@ install_dependencies() {
                 echo -e "${YELLOW}Installing Homebrew...${NC}"
                 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             fi
-            brew install minikube kubectl skaffold helm yq
+            brew install yq minikube kubectl skaffold helm
             ;;
             
         "ubuntu"|"debian")
             sudo apt-get update
-            sudo apt-get install -y curl wget apt-transport-https yq
+            sudo apt-get install -y curl wget apt-transport-https
+            
+            # Install yq
+            echo -e "${YELLOW}Installing yq...${NC}"
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod a+x /usr/local/bin/yq
             
             # Install Helm
             curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
@@ -83,6 +88,11 @@ install_dependencies() {
         "fedora"|"rhel"|"centos")
             sudo dnf install -y curl wget
             
+            # Install yq
+            echo -e "${YELLOW}Installing yq...${NC}"
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod a+x /usr/local/bin/yq
+            
             # Install Helm
             curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
             
@@ -103,13 +113,7 @@ install_dependencies() {
             ;;
             
         "arch"|"manjaro")
-            sudo pacman -Sy --noconfirm curl wget
-            sudo pacman -S --noconfirm minikube kubectl helm
-            
-            # Install Skaffold
-            curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
-            sudo install skaffold /usr/local/bin/
-            rm skaffold
+            sudo pacman -Sy --noconfirm curl wget yq minikube kubectl helm
             ;;
 
         "nixos")
@@ -310,9 +314,60 @@ setup_manifest() {
     echo -e "${GREEN}Successfully setup manifest${NC}"
 }
 
+# Function to verify yq installation
+verify_yq() {
+    # Find yq location
+    YQ_PATH=$(which yq 2>/dev/null)
+    
+    # Force reinstall yq
+    echo -e "${YELLOW}Installing/Updating yq...${NC}"
+    case $OS in
+        "ubuntu"|"debian")
+            sudo rm -f /usr/local/bin/yq
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.35.1/yq_linux_amd64
+            sudo chmod a+x /usr/local/bin/yq
+            YQ_PATH="/usr/local/bin/yq"
+            ;;
+        "macos")
+            brew reinstall yq
+            YQ_PATH=$(which yq)
+            ;;
+        "fedora"|"rhel"|"centos")
+            sudo rm -f /usr/local/bin/yq
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.35.1/yq_linux_amd64
+            sudo chmod a+x /usr/local/bin/yq
+            YQ_PATH="/usr/local/bin/yq"
+            ;;
+        "arch"|"manjaro")
+            sudo pacman -Sy --noconfirm yq
+            YQ_PATH=$(which yq)
+            ;;
+    esac
+    
+    # Verify installation
+    if ! $YQ_PATH --version &>/dev/null; then
+        echo -e "${RED}Failed to install yq${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}Using yq at: $YQ_PATH${NC}"
+    $YQ_PATH --version
+    
+    # Test yq with a simple YAML parse
+    echo "test: value" | $YQ_PATH '.test' > /dev/null || {
+        echo -e "${RED}yq installation is not working correctly${NC}"
+        exit 1
+    }
+    
+    # Export YQ_PATH for use in other functions
+    export YQ_PATH
+    
+    echo -e "${GREEN}yq test successful${NC}"
+}
+
 # Function to apply manifest configuration
 apply_manifest() {
-    echo -e "${BLUE}Applying manifest configuration...${NC}"
+    echo -e "\n📦 ${BLUE}Applying manifest configuration...${NC}"
     
     MANIFEST_DIR="$HOME/.scholar-spark/manifest"
     MANIFEST_FILE="$MANIFEST_DIR/manifest.yaml"
@@ -321,125 +376,258 @@ apply_manifest() {
     if [ ! -f "$MANIFEST_FILE" ]; then
         echo -e "${RED}Manifest file not found at $MANIFEST_FILE${NC}"
         exit 1
-    }
+    fi
     
-    # Parse namespace from manifest
-    NAMESPACE=$(yq e '.dev-environment.namespace' "$MANIFEST_FILE")
-    echo -e "${BLUE}Using namespace: $NAMESPACE${NC}"
+    echo -e "🔍 ${BLUE}Reading manifest configuration...${NC}"
+    
+    # Debug: Print manifest content and yq version
+    echo -e "📄 ${BLUE}Manifest content:${NC}"
+    cat "$MANIFEST_FILE"
+    echo -e "\n🔧 ${BLUE}Using yq version:${NC}"
+    $YQ_PATH --version
+    
+    # Validate manifest structure
+    if ! $YQ_PATH -r '.' "$MANIFEST_FILE" > /dev/null 2>&1; then
+        echo -e "${RED}Invalid YAML structure in manifest file${NC}"
+        exit 1
+    fi
+    
+    # Parse namespace from manifest with v3 syntax
+    echo -e "\n🔍 ${BLUE}Parsing namespace...${NC}"
+    NAMESPACE=$($YQ_PATH -r '.["dev-environment"].namespace' "$MANIFEST_FILE")
+    echo -e "📍 ${BLUE}Using namespace: $NAMESPACE${NC}"
     
     # Create namespace if it doesn't exist
     if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
+        echo -e "🔧 ${BLUE}Creating namespace: $NAMESPACE${NC}"
         kubectl create namespace "$NAMESPACE"
     fi
     
     # Install shared infrastructure charts
-    echo -e "${BLUE}Installing shared infrastructure...${NC}"
+    echo -e "🚀 ${BLUE}Installing shared infrastructure...${NC}"
     
-    # Read chart details from manifest
-    CHART_REPO=$(yq e '.shared-infrastructure.charts[0].repository' "$MANIFEST_FILE")
-    CHART_VERSION=$(yq e '.shared-infrastructure.charts[0].version' "$MANIFEST_FILE")
-    CHART_NAME=$(yq e '.shared-infrastructure.charts[0].name' "$MANIFEST_FILE")
+    echo -e "🔍 ${BLUE}Parsing chart details...${NC}"
+    # Read chart details from manifest with v3 syntax and bracket notation
+    CHART_REPO=$($YQ_PATH -r '.["shared-infrastructure"].charts[0].repository' "$MANIFEST_FILE")
+    echo "Debug: CHART_REPO = $CHART_REPO"
     
-    # Pull and install chart
-    echo -e "${BLUE}Installing chart: $CHART_NAME from $CHART_REPO${NC}"
-    helm pull "$CHART_REPO/$CHART_NAME" --version "$CHART_VERSION" || {
-        echo -e "${RED}Failed to pull chart${NC}"
+    CHART_VERSION=$($YQ_PATH -r '.["shared-infrastructure"].charts[0].version' "$MANIFEST_FILE")
+    echo "Debug: CHART_VERSION = $CHART_VERSION"
+    
+    CHART_NAME=$($YQ_PATH -r '.["shared-infrastructure"].charts[0].name' "$MANIFEST_FILE")
+    echo "Debug: CHART_NAME = $CHART_NAME"
+    
+    # Debug: Print full YAML structure
+    echo -e "\n📄 ${BLUE}Full YAML structure:${NC}"
+    $YQ_PATH -r '.' "$MANIFEST_FILE"
+    
+    # Verify values exist
+    if [ -z "$CHART_REPO" ] || [ -z "$CHART_VERSION" ] || [ -z "$CHART_NAME" ]; then
+        echo -e "${RED}Failed to parse chart information. Please check the manifest structure:${NC}"
+        echo -e "Expected structure:"
+        echo -e "shared-infrastructure:"
+        echo -e "  charts:"
+        echo -e "  - repository: <value>"
+        echo -e "    version: <value>"
+        echo -e "    name: <value>"
+        exit 1
+    fi
+    
+    echo -e "📥 ${BLUE}Pulling chart: $CHART_NAME (version $CHART_VERSION)${NC}"
+    echo -e "   ${BLUE}From: $CHART_REPO${NC}"
+    
+    # Ensure we're using minikube context
+    echo -e "🔄 ${BLUE}Switching to minikube context...${NC}"
+    kubectl config use-context minikube || {
+        echo -e "${RED}Failed to switch to minikube context${NC}"
         exit 1
     }
+    
+    # Pull chart with explicit output file
+    CHART_FILE="$CHART_NAME-$CHART_VERSION.tgz"
+    if ! helm pull "$CHART_REPO/$CHART_NAME" --version "$CHART_VERSION" --destination . ; then
+        echo -e "${RED}Failed to pull chart from repository${NC}"
+        echo -e "Repository: $CHART_REPO"
+        echo -e "Chart: $CHART_NAME"
+        echo -e "Version: $CHART_VERSION"
+        exit 1
+    fi
+    
+    # Verify chart file exists
+    if [ ! -f "$CHART_FILE" ]; then
+        echo -e "${RED}Chart file not found: $CHART_FILE${NC}"
+        echo -e "Current directory contents:"
+        ls -la
+        exit 1
+    fi
     
     # Extract values from manifest and create temporary values file
     TMP_VALUES=$(mktemp)
-    yq e '.shared-infrastructure.charts[0].values' "$MANIFEST_FILE" > "$TMP_VALUES"
+    $YQ_PATH -r '.["shared-infrastructure"].charts[0].values' "$MANIFEST_FILE" > "$TMP_VALUES"
     
-    # Install/upgrade the chart
-    helm upgrade --install "$CHART_NAME" "./$CHART_NAME-$CHART_VERSION.tgz" \
+    echo -e "⚙️  ${BLUE}Installing chart with custom values...${NC}"
+    
+    # Install/upgrade the chart with explicit chart file path and increased timeout
+    helm upgrade --install "$CHART_NAME" "./$CHART_FILE" \
         --namespace "$NAMESPACE" \
         --values "$TMP_VALUES" \
-        --wait || {
+        --timeout 10m \
+        --wait \
+        --debug || {
         echo -e "${RED}Failed to install chart${NC}"
+        
+        # Debug Loki deployment specifically
+        echo -e "\n${YELLOW}Checking Loki deployment:${NC}"
+        kubectl describe deployment loki -n "$NAMESPACE"
+        
+        # Debug Loki pod status
+        echo -e "\n${YELLOW}Checking Loki pod status:${NC}"
+        kubectl get pods -n "$NAMESPACE" -l app=loki -o wide
+        
+        # Get Loki pod events
+        echo -e "\n${YELLOW}Checking Loki pod events:${NC}"
+        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=loki -o name | head -n 1)
+        if [ ! -z "$LOKI_POD" ]; then
+            kubectl describe "$LOKI_POD" -n "$NAMESPACE"
+        fi
+        
+        # Check Loki pod logs
+        echo -e "\n${YELLOW}Checking Loki pod logs:${NC}"
+        if [ ! -z "$LOKI_POD" ]; then
+            kubectl logs "$LOKI_POD" -n "$NAMESPACE" --all-containers=true || true
+        fi
+        
+        # Check storage requirements
+        echo -e "\n${YELLOW}Checking storage requirements:${NC}"
+        kubectl get pvc -n "$NAMESPACE"
+        kubectl get storageclass
+        
+        # Check resource requirements
+        echo -e "\n${YELLOW}Checking resource requirements:${NC}"
+        kubectl describe nodes | grep -A 10 "Allocated resources"
+        
         rm -f "$TMP_VALUES"
-        rm -f "./$CHART_NAME-$CHART_VERSION.tgz"
+        rm -f "./$CHART_FILE"
+        
+        echo -e "\n${RED}Loki deployment failed to become ready. Please check the logs above for details.${NC}"
         exit 1
     }
     
+    # Wait specifically for Loki to be ready with more detailed status checks
+    echo -e "\n${BLUE}Waiting for Loki to be ready...${NC}"
+    local retries=0
+    local max_retries=30
+    
+    # Debug: Show current namespace and deployments
+    echo -e "${YELLOW}Current deployments in namespace $NAMESPACE:${NC}"
+    kubectl get deployments -n "$NAMESPACE"
+    
+    while [ $retries -lt $max_retries ]; do
+        # Check if deployment exists first
+        if ! kubectl get deployment -n "$NAMESPACE" "$CHART_NAME" &>/dev/null; then
+            echo -e "\n${YELLOW}Deployment $CHART_NAME not found in namespace $NAMESPACE. Waiting...${NC}"
+            retries=$((retries + 1))
+            sleep 2
+            continue
+        fi
+        
+        # Check deployment status
+        READY_REPLICAS=$(kubectl get deployment -n "$NAMESPACE" "$CHART_NAME" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        if [ "$READY_REPLICAS" = "1" ]; then
+            echo -e "\n${GREEN}$CHART_NAME is ready!${NC}"
+            break
+        fi
+        
+        # Every 5 retries, show detailed status
+        if [ $((retries % 5)) -eq 0 ]; then
+            echo -e "\n${YELLOW}Current status in namespace $NAMESPACE:${NC}"
+            echo -e "\n${YELLOW}Deployments:${NC}"
+            kubectl get deployments -n "$NAMESPACE"
+            echo -e "\n${YELLOW}Pods:${NC}"
+            kubectl get pods -n "$NAMESPACE"
+            echo -e "\n${YELLOW}Recent events:${NC}"
+            kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | tail -n 5
+            echo -e "\n${YELLOW}Storage:${NC}"
+            kubectl get pvc -n "$NAMESPACE"
+        fi
+        
+        echo -n "."
+        retries=$((retries + 1))
+        sleep 2
+    done
+    
+    if [ $retries -eq $max_retries ]; then
+        echo -e "\n${RED}Timeout waiting for $CHART_NAME to be ready in namespace $NAMESPACE${NC}"
+        echo -e "\n${YELLOW}Final status:${NC}"
+        kubectl get all -n "$NAMESPACE"
+        echo -e "\n${YELLOW}Events:${NC}"
+        kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' | tail -n 10
+        exit 1
+    fi
+    
     # Cleanup
     rm -f "$TMP_VALUES"
-    rm -f "./$CHART_NAME-$CHART_VERSION.tgz"
+    rm -f "./$CHART_FILE"
     
-    echo -e "${GREEN}Successfully applied manifest configuration${NC}"
+    echo -e "✅ ${GREEN}Successfully applied manifest configuration${NC}"
 }
 
 # Main setup process
 main() {
     # Load environment variables from .env file
     if [ -f .env ]; then
-        echo -e "${BLUE}Step 1: Loading environment variables from .env file...${NC}"
+        echo -e "${BLUE}Loading environment variables from .env file...${NC}"
         export $(cat .env | grep -v '^#' | xargs)
     else
         echo -e "${RED}Error: No .env file found. Please create one based on .env.example${NC}"
         exit 1
     fi
 
-    echo -e "${BLUE}Step 2: Setting up development environment...${NC}"
+    echo -e "${BLUE}Setting up development environment...${NC}"
     
     # Check Docker first
     check_docker
     
-    # Detect OS and install dependencies
+    # Detect OS and verify yq installation first
     OS=$(detect_os)
-    echo -e "${BLUE}Step 3: Detected OS: $OS${NC}"
+    echo -e "${BLUE}Detected OS: $OS${NC}"
+    verify_yq
     
     # Install dependencies if needed
     if [[ ! -x "$(command -v minikube)" ]] || \
        [[ ! -x "$(command -v kubectl)" ]] || \
        [[ ! -x "$(command -v skaffold)" ]] || \
-       [[ ! -x "$(command -v helm)" ]]; then
-        echo -e "${BLUE}Step 4: Installing required tools...${NC}"
+       [[ ! -x "$(command -v helm)" ]] || \
+       [[ ! -x "$(command -v yq)" ]]; then
         install_dependencies "$OS"
     fi
     
+    # Start minikube if not running
+    if ! minikube status &> /dev/null; then
+        echo -e "${BLUE}Starting Minikube...${NC}"
+        minikube start --driver=docker
+    fi
+    
+    # Configure Docker to use minikube's Docker daemon
+    echo -e "${BLUE}Configuring Docker environment...${NC}"
+    eval $(minikube docker-env)
+    
     # Setup Helm registry authentication
-    echo -e "${BLUE}Step 5: Setting up Helm registry authentication...${NC}"
     setup_helm_registry
     
     # Setup and apply manifest
     setup_manifest
     apply_manifest
-
-    # Start minikube if not running
-    if ! minikube status &> /dev/null; then
-        echo -e "${BLUE}Step 7: Starting Minikube...${NC}"
-        minikube start --driver=docker
-    fi
     
-    # Configure Docker to use minikube's Docker daemon
-    echo -e "${BLUE}Step 8: Configuring Docker environment...${NC}"
-    eval $(minikube docker-env)
-    
-    # Create namespace if it doesn't exist
-    if ! kubectl get namespace scholar-spark-dev &> /dev/null; then
-        echo -e "${BLUE}Step 9: Creating development namespace...${NC}"
-        kubectl create namespace scholar-spark-dev
-    fi
-
-    # Start skaffold in the background
-    echo -e "${BLUE}Step 10: Starting Skaffold...${NC}"
-    skaffold dev --port-forward &
-    SKAFFOLD_PID=$!
-
-    # Wait for service to be ready and get URL
-    echo -e "${BLUE}Step 11: Waiting for service to be ready...${NC}"
-    sleep 10  # Give skaffold some time to start deployment
-
     # Get service URL once and store it
     SERVICE_URL=$(get_service_url)
     
     # Print developer-friendly information
-    echo -e "${BLUE}Step 12: Displaying development environment information...${NC}"
     print_dev_info
 
-    # Wait for skaffold to finish
-    wait $SKAFFOLD_PID
+    # Start skaffold in dev mode
+    echo -e "${BLUE}Starting Skaffold...${NC}"
+    skaffold dev --port-forward
 }
 
 # Run main function
