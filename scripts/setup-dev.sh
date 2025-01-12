@@ -12,7 +12,7 @@ cleanup() {
     echo -e "\n🧹 ${BLUE}Cleaning up resources...${NC}"
     
     # Set default namespace if manifest doesn't exist
-    NAMESPACE="scholar-spark-dev"
+    NAMESPACE="${ORGANIZATION_PREFIX:-default}-${ENVIRONMENT:-dev}"
     
     # Try to get namespace from manifest if it exists and yq is available
     if [ -f "$HOME/.scholar-spark/manifest/manifest.yaml" ] && command -v yq &>/dev/null; then
@@ -236,7 +236,7 @@ print_dev_info() {
     echo -e "🚀 ${GREEN}Scholar Spark Development Environment${NC}\n"
     echo -e "📦 ${BLUE}Service: ${GREEN}${SERVICE_NAME}${NC}\n"
     echo -e "🔗 ${BLUE}API Endpoints:${NC}"
-    echo -e "   ${GREEN}→ API:     ${SERVICE_URL}/api/v1"
+    echo -e "   ${GREEN}→ API:     ${SERVICE_URL}${API_PATH:-/api/v1}"
     echo -e "   → Docs:    ${SERVICE_URL}/docs"
     echo -e "   → Health:  ${SERVICE_URL}/health${NC}\n"
     echo -e "📝 ${BLUE}Development Tips:${NC}"
@@ -247,8 +247,8 @@ print_dev_info() {
     echo -e "   ${GREEN}→ CTRL+C to stop the service"
     echo -e "   → ./scripts/dev.sh to restart${NC}\n"
     echo -e "📊 ${BLUE}Monitoring:${NC}"
-    echo -e "   ${GREEN}→ Traces: http://localhost:3200"
-    echo -e "   → Logs:   http://localhost:3100${NC}\n"
+    echo -e "   ${GREEN}→ Traces: ${TRACES_ENDPOINT:-http://localhost:3200}"
+    echo -e "   → Logs:   ${LOGS_ENDPOINT:-http://localhost:3100}${NC}\n"
     echo -e "${YELLOW}Starting development server...${NC}\n"
 }
 
@@ -338,10 +338,10 @@ setup_manifest() {
     
     MANIFEST_DIR="$HOME/.scholar-spark/manifest"
     # Use environment variable with fallback
-    MANIFEST_REPO="${SCHOLAR_SPARK_MANIFEST_REPO:-https://github.com/Polyhistor/scholarSparkDevManifest.git}"
+    MANIFEST_REPO="${DEV_MANIFEST_REPO:-https://github.com/Polyhistor/scholarSparkDevManifest.gitt}"
     
-    if [ -z "$SCHOLAR_SPARK_MANIFEST_REPO" ]; then
-        echo -e "${YELLOW}Warning: SCHOLAR_SPARK_MANIFEST_REPO not set, using default repository${NC}"
+    if [ -z "$DEV_MANIFEST_REPO" ]; then
+        echo -e "${YELLOW}Warning: DEV_MANIFEST_REPO not set, using default repository${NC}"
     fi
     
     if [ ! -d "$MANIFEST_DIR" ]; then
@@ -530,11 +530,11 @@ apply_manifest() {
         
         # Debug Loki pod status
         echo -e "\n${YELLOW}Checking Loki pod status:${NC}"
-        kubectl get pods -n "$NAMESPACE" -l app=loki -o wide
+        kubectl get pods -n "$NAMESPACE" -l app=${LOGGING_APP:-loki} -o wide
         
         # Get Loki pod events
         echo -e "\n${YELLOW}Checking Loki pod events:${NC}"
-        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=loki -o name | head -n 1)
+        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=${LOGGING_APP:-loki} -o name | head -n 1)
         if [ ! -z "$LOKI_POD" ]; then
             kubectl describe "$LOKI_POD" -n "$NAMESPACE"
         fi
@@ -568,7 +568,7 @@ apply_manifest() {
     
     while [ $retries -lt $max_retries ]; do
         # Get the Loki pod name
-        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=loki -o name | head -n 1)
+        LOKI_POD=$(kubectl get pods -n "$NAMESPACE" -l app=${LOGGING_APP:-loki} -o name | head -n 1)
         
         if [ ! -z "$LOKI_POD" ]; then
             # Check pod status
@@ -593,7 +593,7 @@ apply_manifest() {
         # Every 5 retries, show status
         if [ $((retries % 5)) -eq 0 ]; then
             echo -e "\n${YELLOW}Current Loki status:${NC}"
-            kubectl get pods -n "$NAMESPACE" -l app=loki
+            kubectl get pods -n "$NAMESPACE" -l app=${LOGGING_APP:-loki}
             echo -e "\n${YELLOW}Recent events:${NC}"
             kubectl get events -n "$NAMESPACE" --field-selector involvedObject.name=loki --sort-by='.lastTimestamp' | tail -n 5
         fi
@@ -606,7 +606,7 @@ apply_manifest() {
     if [ $retries -eq $max_retries ]; then
         echo -e "\n${RED}Timeout waiting for Loki to be ready${NC}"
         echo -e "\n${YELLOW}Final pod status:${NC}"
-        kubectl get pods -n "$NAMESPACE" -l app=loki
+        kubectl get pods -n "$NAMESPACE" -l app=${LOGGING_APP:-loki}
         echo -e "\n${YELLOW}Pod logs:${NC}"
         kubectl logs "$LOKI_POD" -n "$NAMESPACE" --previous || true
         exit 1
