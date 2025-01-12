@@ -337,7 +337,12 @@ setup_manifest() {
     echo -e "${BLUE}Setting up development manifest...${NC}"
     
     MANIFEST_DIR="$HOME/.scholar-spark/manifest"
-    MANIFEST_REPO="https://github.com/Polyhistor/scholarSparkDevManifest.git"
+    # Use environment variable with fallback
+    MANIFEST_REPO="${SCHOLAR_SPARK_MANIFEST_REPO:-https://github.com/Polyhistor/scholarSparkDevManifest.git}"
+    
+    if [ -z "$SCHOLAR_SPARK_MANIFEST_REPO" ]; then
+        echo -e "${YELLOW}Warning: SCHOLAR_SPARK_MANIFEST_REPO not set, using default repository${NC}"
+    fi
     
     if [ ! -d "$MANIFEST_DIR" ]; then
         echo -e "${BLUE}Cloning manifest repository...${NC}"
