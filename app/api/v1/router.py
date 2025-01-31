@@ -20,6 +20,8 @@ async def register(user: User):
         )
     return user_repo.create_user(user)
 
+
+#TODO: OID Connect
 @router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_repo = UserRepository()
