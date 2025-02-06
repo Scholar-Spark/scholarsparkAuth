@@ -201,8 +201,17 @@ check_docker() {
         exit 1
     fi
 
+    # Save current Docker context if it exists
+    if [ -f ~/.docker/config.json ]; then
+        ORIGINAL_DOCKER_CONTEXT=$(docker context inspect -f '{{.Name}}' 2>/dev/null || echo "default")
+    else
+        ORIGINAL_DOCKER_CONTEXT="default"
+    fi
+
+    # Test local Docker daemon
     if ! docker info &> /dev/null; then
-        echo -e "${RED}Docker daemon is not running. Please start Docker first.${NC}"
+        echo -e "${RED}Local Docker daemon is not running. Please start Docker first.${NC}"
+        echo -e "${YELLOW}On Linux, you can start it with: sudo systemctl start docker${NC}"
         exit 1
     fi
 }
@@ -656,11 +665,17 @@ main() {
     # Start minikube if not running
     if ! minikube status &> /dev/null; then
         echo -e "${BLUE}Starting Minikube...${NC}"
-        minikube start --driver=docker
+        minikube start --driver=docker \
+            --docker-opt dns=8.8.8.8 \
+            --docker-opt dns=8.8.4.4 \
+            --insecure-registry "10.0.0.0/24" \
+            --registry-mirror=https://mirror.gcr.io \
+            --registry-mirror=https://registry-1.docker.io
     fi
     
-    # Configure Docker to use minikube's Docker daemon
-    echo -e "${BLUE}Configuring Docker environment...${NC}"
+    # Save the local Docker context before switching
+    echo -e "${BLUE}Switching to Minikube's Docker daemon...${NC}"
+    echo -e "${YELLOW}Note: Your local Docker daemon will be temporarily unavailable${NC}"
     eval $(minikube docker-env)
     
     # Setup Helm registry authentication
@@ -679,6 +694,9 @@ main() {
     # Start skaffold
     echo -e "${BLUE}Starting Skaffold...${NC}"
     skaffold dev --port-forward
+
+    # Restore original Docker context when script exits
+    trap 'echo -e "${BLUE}Restoring local Docker context...${NC}" && docker context use "$ORIGINAL_DOCKER_CONTEXT" &>/dev/null' EXIT
 }
 
 # Run main function
