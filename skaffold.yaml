@@ -16,11 +16,11 @@ deploy:
   helm:
     releases:
       - name: auth-service
-        chartPath: helm/auth-service
+        chartPath: helm
         namespace: scholar-spark-dev
         createNamespace: true
         valuesFiles:
-          - helm/auth-service/values.yaml
+          - helm/values.yaml
         setValueTemplates:
           database.user: "{{.POSTGRES_USER}}"
           database.password: "{{.POSTGRES_PASSWORD}}"
