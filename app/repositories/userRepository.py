@@ -35,34 +35,46 @@ class UserRepository:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
-                        # Create user with status flags
+                        # Create user
                         cur.execute(
                             """
-                            INSERT INTO users (
-                                email, 
-                                password_hash, 
-                                is_active,
-                                is_deleted
-                            )
+                            INSERT INTO users 
+                            (email, password_hash, is_active, is_deleted)
                             VALUES (%s, %s, %s, %s)
-                            RETURNING 
-                                user_id, 
-                                email, 
-                                is_active,
-                                is_deleted,
-                                created_at, 
-                                updated_at;
+                            RETURNING user_id, email, is_active, is_deleted, 
+                                    created_at, updated_at;
                             """,
                             (
-                                user.email,
+                                user.email, 
                                 get_password_hash(user.password),
                                 user.is_active,
                                 user.is_deleted
                             )
                         )
                         user_result = cur.fetchone()
-                        span.set_attributes({"user.id": user_result["user_id"]})
-                        return user_result
+
+                        # Create profile
+                        cur.execute(
+                            """
+                            INSERT INTO user_profiles 
+                            (user_id, first_name, last_name, display_name, 
+                             preferences, is_active, is_deleted)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            RETURNING profile_id, created_at, updated_at;
+                            """,
+                            (
+                                user_result["user_id"],
+                                profile.first_name,
+                                profile.last_name,
+                                profile.display_name or f"{profile.first_name} {profile.last_name}",
+                                profile.preferences,
+                                profile.is_active,
+                                profile.is_deleted
+                            )
+                        )
+                        profile_result = cur.fetchone()
+
+                        return {**user_result, **profile_result}
             except psycopg2.Error as e:
                 self.otel.record_exception(span, e)
                 raise
@@ -98,7 +110,7 @@ class UserRepository:
                     conn.close()
 
     def soft_delete_user(self, user_id: int) -> bool:
-        """Soft delete a user by setting is_deleted to True"""
+        """Soft delete both user and profile"""
         with self.otel.create_span("soft_delete_user", {
             "user.id": user_id
         }) as span:
@@ -106,22 +118,72 @@ class UserRepository:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
+                        # Update user
                         cur.execute(
                             """
                             UPDATE users 
-                            SET 
-                                is_deleted = TRUE,
+                            SET is_deleted = TRUE, 
                                 is_active = FALSE,
                                 updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s
-                            RETURNING user_id;
+                            WHERE user_id = %s;
                             """,
                             (user_id,)
                         )
-                        return cur.fetchone() is not None
+                        
+                        # Update profile
+                        cur.execute(
+                            """
+                            UPDATE user_profiles 
+                            SET is_deleted = TRUE,
+                                is_active = FALSE,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s;
+                            """,
+                            (user_id,)
+                        )
+                        
+                        return True
             except Exception as e:
                 self.otel.record_exception(span, e)
-                raise
+                return False
+
+    def reactivate_user(self, user_id: int) -> bool:
+        """Reactivate both user and profile"""
+        with self.otel.create_span("reactivate_user", {
+            "user.id": user_id
+        }) as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        # Update user
+                        cur.execute(
+                            """
+                            UPDATE users 
+                            SET is_deleted = FALSE, 
+                                is_active = TRUE,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s;
+                            """,
+                            (user_id,)
+                        )
+                        
+                        # Update profile
+                        cur.execute(
+                            """
+                            UPDATE user_profiles 
+                            SET is_deleted = FALSE,
+                                is_active = TRUE,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s;
+                            """,
+                            (user_id,)
+                        )
+                        
+                        return True
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                return False
 
     def update_user_status(self, user_id: int, is_active: bool) -> Optional[Dict]:
         """Update user's active status"""

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from ...schema.user import User, UserResponse, UserCreate, UserProfileCreate
+from ...schema.user import UserCreate, UserResponse, UserProfileCreate
 from ...repositories.userRepository import UserRepository
 from ...core.securityUtils import verify_password, create_access_token
 from datetime import timedelta

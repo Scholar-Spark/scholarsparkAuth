@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict
 from datetime import datetime
 
+# Base User Models
 class UserBase(BaseModel):
     email: EmailStr
 
@@ -15,6 +16,24 @@ class UserResponse(UserBase):
     email: str
     is_active: bool
     is_deleted: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+# Profile Models
+class UserProfileBase(BaseModel):
+    first_name: str
+    last_name: str
+    display_name: Optional[str]
+    preferences: Dict = {}
+    is_active: bool = True  # Match user's active status
+    is_deleted: bool = False  # Match user's deleted status
+
+class UserProfileCreate(UserProfileBase):
+    pass
+
+class UserProfileResponse(UserProfileBase):
+    profile_id: int
+    user_id: int
     created_at: datetime
     updated_at: Optional[datetime]
     
