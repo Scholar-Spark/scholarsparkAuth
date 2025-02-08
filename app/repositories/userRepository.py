@@ -1,5 +1,5 @@
 from typing import Optional, Dict
-from ..schema.user import User, UserResponse, UserCreate, UserProfileCreate
+from ..schema.user import UserResponse, UserCreate, UserProfileCreate
 from ..core.securityUtils import get_password_hash
 from ..core.config import settings
 from scholarSparkObservability.core import OTelSetup
