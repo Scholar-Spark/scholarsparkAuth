@@ -91,7 +91,7 @@ class UserRepository:
                 conn.close()
 
     def get_by_email(self, email: str) -> Optional[Dict]:
-        conn = None
+        """Single method for getting user by email with credentials"""
         with self.otel.create_span("get_user_by_email", {
             "user.email": email
         }) as span:
@@ -101,25 +101,28 @@ class UserRepository:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT id, email, hashed_password, is_active 
-                            FROM users 
-                            WHERE email = %s;
+                            SELECT 
+                                u.*,
+                                p.*,
+                                lc.password_hash,
+                                lc.salt
+                            FROM users u
+                            LEFT JOIN user_profiles p ON u.user_id = p.user_id
+                            LEFT JOIN login_credentials lc ON u.user_id = lc.user_id
+                            WHERE u.email = %s AND u.is_deleted = FALSE;
                             """,
                             (email,)
                         )
                         result = cur.fetchone()
                         if result:
-                            span.set_attributes({"user.id": result["id"]})
+                            span.set_attributes({"user.id": result["user_id"]})
                         return result
-            except psycopg2.Error as e:
+            except Exception as e:
                 self.otel.record_exception(span, e)
                 raise
-            finally:
-                if conn is not None:
-                    conn.close()
 
     def soft_delete_user(self, user_id: int) -> bool:
-        """Soft delete both user and profile"""
+        """Soft delete user"""
         with self.otel.create_span("soft_delete_user", {
             "user.id": user_id
         }) as span:
@@ -127,31 +130,18 @@ class UserRepository:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
-                        # Update user
                         cur.execute(
                             """
                             UPDATE users 
                             SET is_deleted = TRUE, 
                                 is_active = FALSE,
                                 updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s;
+                            WHERE user_id = %s
+                            RETURNING user_id;
                             """,
                             (user_id,)
                         )
-                        
-                        # Update profile
-                        cur.execute(
-                            """
-                            UPDATE user_profiles 
-                            SET is_deleted = TRUE,
-                                is_active = FALSE,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s;
-                            """,
-                            (user_id,)
-                        )
-                        
-                        return True
+                        return cur.fetchone() is not None
             except Exception as e:
                 self.otel.record_exception(span, e)
                 return False
@@ -245,6 +235,46 @@ class UserRepository:
                             (email,)
                         )
                         return cur.fetchone()
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
+    def add_otp_credential(self, user_id: int, otp: OTPCredential) -> Optional[Dict]:
+        with self.otel.create_span("add_otp_credential") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO otp_credentials 
+                            (user_id, token, source, expires_at)
+                            VALUES (%s, %s, %s, %s)
+                            RETURNING credential_id, token, expires_at;
+                            """,
+                            (user_id, otp.token, otp.source, otp.expires_at)
+                        )
+                        return cur.fetchone()
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
+    def verify_otp(self, user_id: int, token: str) -> bool:
+        with self.otel.create_span("verify_otp") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT * FROM otp_credentials
+                            WHERE user_id = %s 
+                            AND token = %s 
+                            AND expires_at > CURRENT_TIMESTAMP;
+                            """,
+                            (user_id, token)
+                        )
+                        return cur.fetchone() is not None
             except Exception as e:
                 self.otel.record_exception(span, e)
                 raise
