@@ -44,8 +44,10 @@ class OTPCredential(BaseModel):
 
 class OpenIDCredential(BaseModel):
     token: str
-    source: str
+    source: str  # e.g., 'google', 'github', 'microsoft'
+    provider_user_id: str  # ID from the provider
     expires_at: datetime
+    email: EmailStr
 
 class LoginCredential(BaseModel):
     email: EmailStr

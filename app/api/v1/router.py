@@ -7,6 +7,7 @@ from ...core.securityUtils import verify_password, create_access_token
 from datetime import timedelta, datetime, timezone
 from ...core.config import settings
 import secrets
+from typing import Dict, Any
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -125,5 +126,48 @@ async def openid_connect(
         expires_at=datetime.now(timezone.utc) + timedelta(days=30)
     )
     return user_repo.add_openid_credential(current_user["user_id"], openid_cred)
+
+@router.post("/auth/openid/{provider}")
+async def openid_login(
+    provider: str,
+    access_token: str,
+    user_data: Dict[str, Any]
+):
+    user_repo = UserRepository()
+    
+    # Check if user exists by provider ID
+    existing_user = user_repo.get_user_by_openid(provider, user_data["sub"])
+    
+    if existing_user:
+        # Update existing OpenID credential
+        openid_cred = OpenIDCredential(
+            token=access_token,
+            source=provider,
+            provider_user_id=user_data["sub"],
+            email=user_data["email"],
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+        )
+        user_repo.update_openid_credential(existing_user["user_id"], openid_cred)
+    else:
+        # Create new user with OpenID
+        user = UserCreate(
+            email=user_data["email"],
+            is_active=True
+        )
+        profile = UserProfileCreate(
+            first_name=user_data.get("given_name", ""),
+            last_name=user_data.get("family_name", ""),
+            display_name=user_data.get("name", "")
+        )
+        new_user = user_repo.create_user_with_openid(user, profile, openid_cred)
+        existing_user = new_user
+
+    # Generate JWT token
+    access_token = create_access_token(
+        data={"sub": existing_user["email"]},
+        expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 

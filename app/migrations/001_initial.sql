@@ -39,6 +39,7 @@ CREATE TABLE openid_credentials (
     token VARCHAR(255) NOT NULL,
     source VARCHAR(100) NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    provider_user_id VARCHAR(255) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 

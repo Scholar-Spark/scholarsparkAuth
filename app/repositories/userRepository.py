@@ -13,6 +13,7 @@ class UserRepository:
         self.otel = OTelSetup.get_instance()
 
     @staticmethod
+    
     def get_connection():
         otel = OTelSetup.get_instance()
         with otel.create_span("get_db_connection", {
@@ -203,7 +204,6 @@ class UserRepository:
                 self.otel.record_exception(span, e)
                 raise
         
-    
     def add_otp_credential(self, user_id: int, otp: OTPCredential) -> Optional[Dict]:
         with self.otel.create_span("add_otp_credential") as span:
             try:
@@ -240,6 +240,28 @@ class UserRepository:
                             (user_id, token)
                         )
                         return cur.fetchone() is not None
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
+    def get_user_by_openid(self, provider: str, provider_user_id: str) -> Optional[Dict]:
+        with self.otel.create_span("get_user_by_openid") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT u.*, p.*, oid.token
+                            FROM users u
+                            LEFT JOIN user_profiles p ON u.user_id = p.user_id
+                            LEFT JOIN openid_credentials oid ON u.user_id = oid.user_id
+                            WHERE oid.source = %s 
+                            AND oid.provider_user_id = %s;
+                            """,
+                            (provider, provider_user_id)
+                        )
+                        return cur.fetchone()
             except Exception as e:
                 self.otel.record_exception(span, e)
                 raise
