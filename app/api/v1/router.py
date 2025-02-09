@@ -1,11 +1,12 @@
 from app.dependencies.user import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from ...schema.user import UserCreate, UserResponse, UserProfileCreate
+from ...schema.user import UserCreate, UserResponse, UserProfileCreate, OTPCredential, OpenIDCredential
 from ...repositories.userRepository import UserRepository
 from ...core.securityUtils import verify_password, create_access_token
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from ...core.config import settings
+import secrets
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -66,7 +67,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_repo = UserRepository()
     user = user_repo.get_by_email(form_data.username)
     
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not verify_password(form_data.password + user["salt"], user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -79,5 +87,43 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/otp/generate")
+async def generate_otp(current_user: dict = Depends(get_current_user)):
+    user_repo = UserRepository()
+    otp = OTPCredential(
+        token=secrets.token_urlsafe(32),
+        source="email",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15)
+    )
+    
+    return user_repo.add_otp_credential(current_user["user_id"], otp)
+
+@router.post("/otp/verify")
+async def verify_otp(
+    token: str,
+    current_user: dict = Depends(get_current_user)
+):
+    user_repo = UserRepository()
+    if user_repo.verify_otp(current_user["user_id"], token):
+        return {"message": "OTP verified successfully"}
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired OTP"
+    )
+
+@router.post("/connect/openid")
+async def openid_connect(
+    token: str,
+    source: str,
+    current_user: dict = Depends(get_current_user)
+):
+    user_repo = UserRepository()
+    openid_cred = OpenIDCredential(
+        token=token,
+        source=source,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30)
+    )
+    return user_repo.add_openid_credential(current_user["user_id"], openid_cred)
 
 

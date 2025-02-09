@@ -155,31 +155,18 @@ class UserRepository:
                 conn = self.get_connection()
                 with conn:
                     with conn.cursor() as cur:
-                        # Update user
                         cur.execute(
                             """
                             UPDATE users 
                             SET is_deleted = FALSE, 
                                 is_active = TRUE,
                                 updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s;
+                            WHERE user_id = %s
+                            RETURNING user_id;
                             """,
                             (user_id,)
                         )
-                        
-                        # Update profile
-                        cur.execute(
-                            """
-                            UPDATE user_profiles 
-                            SET is_deleted = FALSE,
-                                is_active = TRUE,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE user_id = %s;
-                            """,
-                            (user_id,)
-                        )
-                        
-                        return True
+                        return cur.fetchone() is not None
             except Exception as e:
                 self.otel.record_exception(span, e)
                 return False
@@ -215,30 +202,8 @@ class UserRepository:
             except Exception as e:
                 self.otel.record_exception(span, e)
                 raise
-
-    def get_user_by_email(self, email: str) -> Optional[Dict]:
-        with self.otel.create_span("get_user", {
-            "user.email": email
-        }) as span:
-            try:
-                conn = self.get_connection()
-                with conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            SELECT u.*, p.*, lc.password_hash
-                            FROM users u
-                            LEFT JOIN user_profiles p ON u.user_id = p.user_id
-                            LEFT JOIN login_credentials lc ON u.user_id = lc.user_id
-                            WHERE u.email = %s AND u.is_deleted = FALSE;
-                            """,
-                            (email,)
-                        )
-                        return cur.fetchone()
-            except Exception as e:
-                self.otel.record_exception(span, e)
-                raise
-
+        
+    
     def add_otp_credential(self, user_id: int, otp: OTPCredential) -> Optional[Dict]:
         with self.otel.create_span("add_otp_credential") as span:
             try:
