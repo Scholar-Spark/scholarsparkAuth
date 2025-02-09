@@ -4,6 +4,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from .config import settings
 from scholarSparkObservability.core import OTelSetup
+import secrets
+import string
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -85,6 +87,27 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         except Exception as e:
             span.set_attributes({
                 "token.created": False
+            })
+            otel.record_exception(span, e)
+            raise
+
+def generate_salt(length: int = 16) -> str:
+    """Generate a random salt string."""
+    otel = get_otel()
+    with otel.create_span("generate_salt", {
+        "security.operation": "salt_generation"
+    }) as span:
+        try:
+            alphabet = string.ascii_letters + string.digits
+            salt = ''.join(secrets.choice(alphabet) for _ in range(length))
+            span.set_attributes({
+                "salt.length": length,
+                "salt.generated": True
+            })
+            return salt
+        except Exception as e:
+            span.set_attributes({
+                "salt.generated": False
             })
             otel.record_exception(span, e)
             raise

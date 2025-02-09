@@ -227,7 +227,6 @@ class UserRepository:
                 raise
 
     def get_user_by_email(self, email: str) -> Optional[Dict]:
-        """Get user by email, excluding soft-deleted users"""
         with self.otel.create_span("get_user", {
             "user.email": email
         }) as span:
@@ -237,12 +236,11 @@ class UserRepository:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT u.*, p.*
+                            SELECT u.*, p.*, lc.password_hash
                             FROM users u
                             LEFT JOIN user_profiles p ON u.user_id = p.user_id
-                            WHERE 
-                                u.email = %s 
-                                AND u.is_deleted = FALSE;
+                            LEFT JOIN login_credentials lc ON u.user_id = lc.user_id
+                            WHERE u.email = %s AND u.is_deleted = FALSE;
                             """,
                             (email,)
                         )
