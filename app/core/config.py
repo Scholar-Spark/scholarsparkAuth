@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     TRACES_ENDPOINT: Optional[str] = None
     LOGS_ENDPOINT: Optional[str] = None
 
+    # Add these settings
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    FRONTEND_URL: str = "http://localhost:3000"  # For redirecting back to frontend
+
     class Config:
         case_sensitive = True
         env_file = ".env"

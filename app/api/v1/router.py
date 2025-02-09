@@ -8,6 +8,8 @@ from datetime import timedelta, datetime, timezone
 from ...core.config import settings
 import secrets
 from typing import Dict, Any
+from fastapi.responses import RedirectResponse
+import httpx
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -16,7 +18,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 async def register(user: UserCreate, profile: UserProfileCreate):
     user_repo = UserRepository()
     
-    if user_repo.get_user_by_email(user.email):
+    if user_repo.get_by_email(user.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
@@ -169,5 +171,64 @@ async def openid_login(
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/auth/google/login")
+async def google_login():
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Google OAuth not configured"
+        )
+    
+    google_auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={settings.GOOGLE_CLIENT_ID}&"
+        "response_type=code&"
+        f"redirect_uri={settings.GOOGLE_REDIRECT_URI}&"
+        "scope=openid email profile"
+    )
+    return RedirectResponse(url=google_auth_url)
+
+@router.get("/auth/google/callback")
+async def google_callback(code: str):
+    try:
+        async with httpx.AsyncClient() as client:
+            # Exchange code for token
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "code": code,
+                    "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+                    "grant_type": "authorization_code"
+                }
+            )
+            token_data = token_response.json()
+            
+            # Get user info
+            user_info = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {token_data['access_token']}"}
+            )
+            user_data = user_info.json()
+            
+            # Use existing openid_login endpoint logic
+            result = await openid_login(
+                provider="google",
+                access_token=token_data['access_token'],
+                user_data=user_data
+            )
+            
+            # Redirect to frontend with token
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/auth/callback?token={result['access_token']}"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 
