@@ -36,4 +36,18 @@ class UserProfileResponse(UserProfileBase):
     user_id: int
     created_at: datetime
     updated_at: Optional[datetime]
+
+class OTPCredential(BaseModel):
+    token: str
+    source: str
+    expires_at: datetime
+
+class OpenIDCredential(BaseModel):
+    token: str
+    source: str
+    expires_at: datetime
+
+class LoginCredential(BaseModel):
+    email: EmailStr
+    password: str
     

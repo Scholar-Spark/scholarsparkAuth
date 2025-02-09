@@ -1,10 +1,11 @@
 from typing import Optional, Dict
 from ..schema.user import UserResponse, UserCreate, UserProfileCreate
-from ..core.securityUtils import get_password_hash
+from ..core.securityUtils import get_password_hash, generate_salt
 from ..core.config import settings
 from scholarSparkObservability.core import OTelSetup
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import json
 
 
 class UserRepository:
@@ -28,9 +29,7 @@ class UserRepository:
                 raise
 
     def create_user(self, user: UserCreate, profile: UserProfileCreate) -> Optional[Dict]:
-        with self.otel.create_span("create_user", {
-            "user.email": user.email
-        }) as span:
+        with self.otel.create_span("create_user") as span:
             try:
                 conn = self.get_connection()
                 with conn:
@@ -39,37 +38,47 @@ class UserRepository:
                         cur.execute(
                             """
                             INSERT INTO users 
-                            (email, password_hash, is_active, is_deleted)
-                            VALUES (%s, %s, %s, %s)
-                            RETURNING user_id, email, is_active, is_deleted, 
-                                    created_at, updated_at;
+                            (email, status, is_active, is_deleted, versoin)
+                            VALUES (%s, 'active', TRUE, FALSE, 1)
+                            RETURNING user_id, email, status, is_active, 
+                                    is_deleted, created_at, updated_at;
                             """,
-                            (
-                                user.email, 
-                                get_password_hash(user.password),
-                                user.is_active,
-                                user.is_deleted
-                            )
+                            (user.email,)
                         )
                         user_result = cur.fetchone()
+
+                        # Create login credentials
+                        salt = generate_salt()  # You'll need to implement this
+                        cur.execute(
+                            """
+                            INSERT INTO login_credentials 
+                            (user_id, email, password_hash, salt)
+                            VALUES (%s, %s, %s, %s);
+                            """,
+                            (
+                                user_result["user_id"],
+                                user.email,
+                                get_password_hash(user.password + salt),
+                                salt
+                            )
+                        )
 
                         # Create profile
                         cur.execute(
                             """
                             INSERT INTO user_profiles 
                             (user_id, first_name, last_name, display_name, 
-                             preferences, is_active, is_deleted)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            RETURNING profile_id, created_at, updated_at;
+                             preferences, email)
+                            VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+                            RETURNING profile_id;
                             """,
                             (
                                 user_result["user_id"],
                                 profile.first_name,
                                 profile.last_name,
                                 profile.display_name or f"{profile.first_name} {profile.last_name}",
-                                profile.preferences,
-                                profile.is_active,
-                                profile.is_deleted
+                                json.dumps(profile.preferences),
+                                user.email
                             )
                         )
                         profile_result = cur.fetchone()

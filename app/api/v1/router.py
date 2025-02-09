@@ -33,7 +33,9 @@ async def delete_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this user"
         )
-    
+
+
+
     if user_repo.soft_delete_user(user_id):
         return {"message": "User successfully deleted"}
     raise HTTPException(
