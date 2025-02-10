@@ -70,25 +70,21 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_repo = UserRepository()
     user = user_repo.get_by_email(form_data.username)
     
-    if not user:
+    if not user or not verify_password(form_data.password + user["salt"], user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if not verify_password(form_data.password + user["salt"], user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Enrich user data with roles and permissions
+    user_data = {
+        **user,
+        "roles": await user_repo.get_user_roles(user["user_id"]),
+        "permissions": await user_repo.get_user_permissions(user["user_id"])
+    }
     
-    access_token = create_access_token(
-        data={"sub": user["email"]},
-        expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    
+    access_token = create_access_token(user_data)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/otp/generate")

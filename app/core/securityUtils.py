@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+
+from app.schema.user import TokenPayload
 from .config import settings
 from scholarSparkObservability.core import OTelSetup
 import secrets
@@ -46,43 +48,46 @@ def get_password_hash(password: str) -> str:
             otel.record_exception(span, e)
             raise
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(user_data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token using a shallow copy of the data."""
     otel = get_otel()
-    with otel.create_span("create_access_token", {
-        "security.operation": "token_creation",
-        "token.type": "access_token"
-    }) as span:
+    with otel.create_span("create_access_token") as span:
         try:
-            to_encode = data.copy()
-            
-            # Always use UTC for tokens
+            user_context = {
+                "sub": user_data["email"],  # Required by OAuth2
+                "uid": user_data["user_id"],
+                "name": user_data.get("display_name"),
+                "given_name": user_data.get("first_name"),
+                "family_name": user_data.get("last_name"),
+                "email": user_data["email"],
+                "roles": user_data.get("roles", []),
+                "permissions": user_data.get("permissions", []),
+                "is_active": user_data["is_active"],
+                "metadata": {
+                    "tenant_id": user_data.get("tenant_id"),
+                    "profile_complete": bool(user_data.get("first_name")),
+                    "last_login": datetime.now(timezone.utc).isoformat()
+                }
+            }
+
             if expires_delta:
                 expire = datetime.now(timezone.utc) + expires_delta
             else:
                 expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-            
-            # Standard JWT claims
-            to_encode.update({
-                "exp": expire,  # Standard JWT 'exp' claim
-                "iat": datetime.now(timezone.utc),  # Issued at
-                "nbf": datetime.now(timezone.utc),  # Not valid before
+
+            user_context.update({
+                "exp": expire,
+                "iat": datetime.now(timezone.utc),
+                "nbf": datetime.now(timezone.utc),
+                "iss": settings.APP_NAME,  # Token issuer
+                "aud": ["scholar-spark-services"]  # Intended audiences
             })
-            
-            # jose library handles datetime serialization automatically
-            encoded_jwt = jwt.encode(
-                to_encode, 
-                settings.JWT_SECRET_KEY, 
+
+            return jwt.encode(
+                user_context,
+                settings.JWT_SECRET_KEY,
                 algorithm=settings.JWT_ALGORITHM
             )
-            
-            span.set_attributes({
-                "token.created": True,
-                "token.algorithm": settings.JWT_ALGORITHM,
-                "token.expiry": expire.isoformat()
-            })
-            
-            return encoded_jwt
             
         except Exception as e:
             span.set_attributes({
@@ -111,3 +116,32 @@ def generate_salt(length: int = 16) -> str:
             })
             otel.record_exception(span, e)
             raise
+
+def decode_and_validate_token(token: str, audience: str) -> TokenPayload:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=audience,
+            options={
+                "verify_sub": True,
+                "verify_exp": True,
+                "verify_aud": True,
+                "require": ["sub", "uid", "exp", "roles", "permissions"]
+            }
+        )
+        
+        # Convert timestamp to datetime for exp, iat, nbf
+        for field in ['exp', 'iat', 'nbf']:
+            if field in payload:
+                payload[field] = datetime.fromtimestamp(payload[field], tz=timezone.utc)
+                
+        return TokenPayload(**payload)
+        
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

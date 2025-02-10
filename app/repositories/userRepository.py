@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from ..schema.user import  UserCreate, UserProfileCreate, OTPCredential
 from ..core.securityUtils import get_password_hash, generate_salt
 from ..core.config import settings
@@ -265,3 +265,13 @@ class UserRepository:
             except Exception as e:
                 self.otel.record_exception(span, e)
                 raise
+
+    async def get_user_roles(self, user_id: int) -> List[str]:
+        # TODO: Implement role retrieval from database
+        # For now, return a default role
+        return ["user"]
+
+    async def get_user_permissions(self, user_id: int) -> List[str]:
+        # TODO: Implement permission retrieval from database
+        # For now, return default permissions
+        return ["read:profile", "update:profile"]
