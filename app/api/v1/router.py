@@ -10,6 +10,7 @@ import secrets
 from typing import Dict, Any
 from fastapi.responses import RedirectResponse
 import httpx
+from ...core.securityUtils import TokenPayload
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -226,5 +227,16 @@ async def google_callback(code: str):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+@router.get("/me")
+async def get_my_info(current_user: TokenPayload = Depends(get_current_user)):
+    return {
+        "user_id": current_user.uid,
+        "email": current_user.email,
+        "name": current_user.name,
+        "roles": current_user.roles,
+        "permissions": current_user.permissions,
+        "metadata": current_user.metadata
+    }
 
 
