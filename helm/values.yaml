@@ -26,4 +26,5 @@ observability:
     endpoint: http://tempo:4318
 
 redis:
+  enabled: true
   url: "redis://redis:6379/0"

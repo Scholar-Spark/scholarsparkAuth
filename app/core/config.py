@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Database
     POSTGRES_DB: str
     
+    # Redis settings
+    REDIS_URL: str = "redis://redis:6379/0"  # Default Redis URL for development
+    
     # CORS
     CORS_ORIGINS: List[str] = ["*"]
     
