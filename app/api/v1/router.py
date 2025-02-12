@@ -271,7 +271,7 @@ async def refresh_token(
             raise HTTPException(status_code=400, detail="Invalid token type")
             
         user_repo = UserRepository()
-        user = user_repo.get_user_by_id(int(payload["sub"]))
+        user = user_repo.get_by_id(int(payload["sub"]))
         
         if not user:
             raise HTTPException(status_code=404, detail="User not found")

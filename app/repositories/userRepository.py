@@ -122,6 +122,37 @@ class UserRepository:
                 self.otel.record_exception(span, e)
                 raise
 
+    def get_by_id(self, user_id: int) -> Optional[Dict]:
+        """Get user by ID with credentials"""
+        with self.otel.create_span("get_user_by_id", {
+            "user.id": user_id
+        }) as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT 
+                                u.*,
+                                p.*,
+                                lc.password_hash,
+                                lc.salt
+                            FROM users u
+                            LEFT JOIN user_profiles p ON u.user_id = p.user_id
+                            LEFT JOIN login_credentials lc ON u.user_id = lc.user_id
+                            WHERE u.user_id = %s AND u.is_deleted = FALSE;
+                            """,
+                            (user_id,)
+                        )
+                        result = cur.fetchone()
+                        if result:
+                            span.set_attributes({"user.email": result["email"]})
+                        return result
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
     def soft_delete_user(self, user_id: int) -> bool:
         """Soft delete user"""
         with self.otel.create_span("soft_delete_user", {
