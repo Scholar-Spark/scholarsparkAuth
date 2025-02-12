@@ -145,3 +145,49 @@ def decode_and_validate_token(token: str, audience: str) -> TokenPayload:
             detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+def create_refresh_token(user_id: int) -> str:
+    """Create a refresh token for the user"""
+    otel = get_otel()
+    with otel.create_span("create_refresh_token") as span:
+        try:
+            expires = datetime.now(timezone.utc) + timedelta(days=30)
+            payload = {
+                "sub": str(user_id),
+                "type": "refresh",
+                "exp": expires,
+                "iat": datetime.now(timezone.utc),
+                "nbf": datetime.now(timezone.utc),
+                "iss": settings.APP_NAME
+            }
+            return jwt.encode(
+                payload,
+                settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM
+            )
+        except Exception as e:
+            otel.record_exception(span, e)
+            raise
+
+def create_password_reset_token(user_id: int) -> str:
+    """Create a password reset token"""
+    otel = get_otel()
+    with otel.create_span("create_password_reset_token") as span:
+        try:
+            expires = datetime.now(timezone.utc) + timedelta(hours=24)
+            payload = {
+                "sub": str(user_id),
+                "type": "password_reset",
+                "exp": expires,
+                "iat": datetime.now(timezone.utc),
+                "nbf": datetime.now(timezone.utc),
+                "iss": settings.APP_NAME
+            }
+            return jwt.encode(
+                payload,
+                settings.JWT_SECRET_KEY,
+                algorithm=settings.JWT_ALGORITHM
+            )
+        except Exception as e:
+            otel.record_exception(span, e)
+            raise

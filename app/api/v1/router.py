@@ -1,9 +1,9 @@
 from app.dependencies.user import get_current_user
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from ...schema.user import UserCreate, UserResponse, UserProfileCreate, OTPCredential, OpenIDCredential
 from ...repositories.userRepository import UserRepository
-from ...core.securityUtils import verify_password, create_access_token
+from ...core.securityUtils import verify_password, create_access_token, create_refresh_token, create_password_reset_token
 from datetime import timedelta, datetime, timezone
 from ...core.config import settings
 import secrets
@@ -11,6 +11,8 @@ from typing import Dict, Any
 from fastapi.responses import RedirectResponse
 import httpx
 from ...core.securityUtils import TokenPayload
+from jose import jwt, JWTError
+from pydantic import EmailStr
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -86,7 +88,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     }
     
     access_token = create_access_token(user_data)
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = create_refresh_token(user["user_id"])
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
 
 @router.post("/otp/generate")
 async def generate_otp(current_user: dict = Depends(get_current_user)):
@@ -238,5 +247,101 @@ async def get_my_info(current_user: TokenPayload = Depends(get_current_user)):
         "permissions": current_user.permissions,
         "metadata": current_user.metadata
     }
+
+@router.post("/token/refresh")
+async def refresh_token(
+    refresh_token: str = Form(...), # the 3 dots inside the paranthesis is a special thing called 'ellipsis' and it means that the argument is required. This is a Pydantic thing. 
+    grant_type: str = Form(...),
+):
+    # Validate grant type
+    if grant_type != "refresh_token":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid grant_type. Must be 'refresh_token'"
+        )
+
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        
+        if payload["type"] != "refresh":
+            raise HTTPException(status_code=400, detail="Invalid token type")
+            
+        user_repo = UserRepository()
+        user = user_repo.get_user_by_id(int(payload["sub"]))
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Create new tokens with sliding window
+        user_data = {
+            **user,
+            "roles": await user_repo.get_user_roles(user["user_id"]),
+            "permissions": await user_repo.get_user_permissions(user["user_id"])
+        }
+        
+        access_token = create_access_token(user_data)
+        new_refresh_token = create_refresh_token(user["user_id"])
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        }
+        
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+
+
+
+
+
+@router.post("/password/reset-request")
+async def request_password_reset(email: EmailStr):
+    user_repo = UserRepository()
+    user = user_repo.get_by_email(email)
+    
+    if user:
+        # Generate reset token
+        reset_token = create_password_reset_token(user["user_id"])
+        
+        # TODO: Send email with reset link
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        
+        # Store reset token in database
+        user_repo.store_password_reset_token(user["user_id"], reset_token)
+        
+    return {"message": "If an account exists, a reset link will be sent"}
+
+@router.post("/password/reset")
+async def reset_password(token: str, new_password: str):
+    try:
+        # Verify token
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        
+        user_repo = UserRepository()
+        if user_repo.verify_reset_token(payload["sub"], token):
+            # Update password
+            user_repo.update_password(payload["sub"], new_password)
+            # Invalidate token
+            user_repo.invalidate_reset_token(payload["sub"], token)
+            return {"message": "Password updated successfully"}
+            
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
 
 
