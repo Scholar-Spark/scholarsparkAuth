@@ -2,15 +2,20 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from fastapi import HTTPException, status
 
 from app.schema.user import TokenPayload
 from .config import settings
 from scholarSparkObservability.core import OTelSetup
 import secrets
 import string
+from redis import asyncio as aioredis
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Initialize Redis connection
+redis = aioredis.from_url(settings.REDIS_URL)
 
 def get_otel():
     """Lazy initialization of OpenTelemetry instance"""
@@ -191,3 +196,45 @@ def create_password_reset_token(user_id: int) -> str:
         except Exception as e:
             otel.record_exception(span, e)
             raise
+
+async def is_rate_limited(
+    identifier: str,
+    action: str,
+    max_attempts: int = 5,
+    window_seconds: int = 3600
+) -> bool:
+    """
+    Check if an action is rate limited
+    
+    Args:
+        identifier: Usually IP address or user_id
+        action: Type of action being rate limited
+        max_attempts: Maximum number of attempts allowed
+        window_seconds: Time window in seconds
+    """
+    key = f"ratelimit:{action}:{identifier}"
+    
+    async with redis.pipeline() as pipe:
+        try:
+            # Get current count and increment
+            current = await redis.get(key)
+            
+            if current is None:
+                # First attempt
+                await pipe.set(key, 1, ex=window_seconds)
+                await pipe.execute()
+                return False
+                
+            count = int(current)
+            if count >= max_attempts:
+                return True
+                
+            # Increment counter
+            await pipe.incr(key)
+            await pipe.execute()
+            return False
+            
+        except Exception as e:
+            # If Redis fails, default to allowing the request
+            # You might want to log this error
+            return False

@@ -6,6 +6,7 @@ from scholarSparkObservability.core import OTelSetup
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
+from datetime import datetime, timezone, timedelta
 
 
 class UserRepository:
@@ -306,3 +307,83 @@ class UserRepository:
         # TODO: Implement permission retrieval from database
         # For now, return default permissions
         return ["read:profile", "update:profile"]
+
+    def store_password_reset_token(self, user_id: int, token: str) -> bool:
+        """Store password reset token with expiration"""
+        with self.otel.create_span("store_password_reset_token") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        # Invalidate any existing tokens
+                        cur.execute(
+                            """
+                            UPDATE password_reset_tokens 
+                            SET used_at = CURRENT_TIMESTAMP 
+                            WHERE user_id = %s AND used_at IS NULL;
+                            """
+                            (user_id,)
+                        )
+                        
+                        # Store new token
+                        cur.execute(
+                            """
+                            INSERT INTO password_reset_tokens 
+                            (user_id, token, expires_at)
+                            VALUES (%s, %s, %s)
+                            RETURNING token_id;
+                            """,
+                            (
+                                user_id, 
+                                token, 
+                                datetime.now(timezone.utc) + timedelta(hours=24)
+                            )
+                        )
+                        return cur.fetchone() is not None
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
+    def verify_reset_token(self, user_id: int, token: str) -> bool:
+        """Verify if reset token is valid and not expired"""
+        with self.otel.create_span("verify_reset_token") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT token_id 
+                            FROM password_reset_tokens
+                            WHERE user_id = %s 
+                            AND token = %s
+                            AND expires_at > CURRENT_TIMESTAMP
+                            AND used_at IS NULL;
+                            """,
+                            (user_id, token)
+                        )
+                        return cur.fetchone() is not None
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise
+
+    def invalidate_reset_token(self, user_id: int, token: str) -> bool:
+        """Mark token as used after successful password reset"""
+        with self.otel.create_span("invalidate_reset_token") as span:
+            try:
+                conn = self.get_connection()
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE password_reset_tokens
+                            SET used_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s AND token = %s
+                            RETURNING token_id;
+                            """,
+                            (user_id, token)
+                        )
+                        return cur.fetchone() is not None
+            except Exception as e:
+                self.otel.record_exception(span, e)
+                raise

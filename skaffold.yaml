@@ -1,4 +1,4 @@
-apiVersion: skaffold/v4beta11
+apiVersion: skaffold/v4beta1
 kind: Config
 metadata:
   name: auth-service
@@ -26,6 +26,7 @@ deploy:
           database.password: "{{.POSTGRES_PASSWORD}}"
           database.name: "{{.POSTGRES_DB}}"
           jwt.secretKey: "{{.JWT_SECRET_KEY}}"
+
 portForward:
   - resourceType: service
     resourceName: auth-service

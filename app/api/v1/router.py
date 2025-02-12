@@ -1,6 +1,6 @@
 from app.dependencies.user import get_current_user
-from fastapi import APIRouter, Depends, HTTPException, status, Form
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, status, Form, BackgroundTasks
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer
 from ...schema.user import UserCreate, UserResponse, UserProfileCreate, OTPCredential, OpenIDCredential
 from ...repositories.userRepository import UserRepository
 from ...core.securityUtils import verify_password, create_access_token, create_refresh_token, create_password_reset_token
@@ -13,9 +13,12 @@ import httpx
 from ...core.securityUtils import TokenPayload
 from jose import jwt, JWTError
 from pydantic import EmailStr
+from ...core.rateLimiter import is_rate_limited
+from ...core.emailUtils import send_reset_email
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+security = HTTPBearer()
 
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate, profile: UserProfileCreate):
@@ -299,26 +302,38 @@ async def refresh_token(
             detail="Invalid refresh token"
         )
 
-
-
-
-
 @router.post("/password/reset-request")
-async def request_password_reset(email: EmailStr):
+async def request_password_reset(
+    email: EmailStr,
+    background_tasks: BackgroundTasks,
+    client_ip: str = Depends(get_client_ip)
+):
+    # Rate limiting
+    if await is_rate_limited(client_ip, "reset_password", max_attempts=3, window_seconds=3600):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many reset attempts. Please try again later."
+        )
+
     user_repo = UserRepository()
     user = user_repo.get_by_email(email)
     
     if user:
-        # Generate reset token
         reset_token = create_password_reset_token(user["user_id"])
-        
-        # TODO: Send email with reset link
-        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-        
-        # Store reset token in database
         user_repo.store_password_reset_token(user["user_id"], reset_token)
         
-    return {"message": "If an account exists, a reset link will be sent"}
+        # Send email asynchronously
+        background_tasks.add_task(
+            send_reset_email,
+            email=user["email"],
+            reset_link=f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        )
+    
+    # Always return the same response to prevent email enumeration
+    return {
+        "message": "If an account exists with this email, a password reset link will be sent.",
+        "retry_in": "1 hour"
+    }
 
 @router.post("/password/reset")
 async def reset_password(token: str, new_password: str):

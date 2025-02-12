@@ -80,4 +80,11 @@ class UserContext(BaseModel):
     is_active: bool
     tenant_id: Optional[str]  # For multi-tenancy support
     metadata: Dict[str, Any] = {}  # For extensibility
+
+    
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
     

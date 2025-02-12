@@ -28,7 +28,9 @@ spec:
             - name: POSTGRES_DB
               value: "{{ .Values.database.name }}"
             - name: JWT_SECRET_KEY
-              value: "{{ .Values.jwt.secretKey }}" 
+              value: "{{ .Values.jwt.secretKey }}"
+            - name: REDIS_URL
+              value: {{ .Values.redis.url }} 
 
 apiVersion: v1
 kind: Service

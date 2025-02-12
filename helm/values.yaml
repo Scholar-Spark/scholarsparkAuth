@@ -24,3 +24,6 @@ observability:
   tempo:
     enabled: true
     endpoint: http://tempo:4318
+
+redis:
+  url: "redis://redis:6379/0"
