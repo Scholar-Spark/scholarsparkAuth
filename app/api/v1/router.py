@@ -15,6 +15,7 @@ from jose import jwt, JWTError
 from pydantic import EmailStr
 from ...core.rateLimiter import is_rate_limited
 from ...core.emailUtils import send_reset_email
+from ...core.ipUtils import get_client_ip
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
