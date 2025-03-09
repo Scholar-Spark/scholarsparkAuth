@@ -310,15 +310,12 @@ setup_helm_registry() {
         fi
     done
 
-    # GitHub login if not already authenticated
-    if ! gh auth status &> /dev/null; then
-        echo -e "${YELLOW}Please login to GitHub...${NC}"
-        if [[ "$OSTYPE" == "darwin"* ]] || [ -n "$DISPLAY" ]; then
-            gh auth login --git-protocol ssh --web
-        else
-            echo -e "${YELLOW}Please visit https://github.com/login/device in your browser${NC}"
-            gh auth login --git-protocol ssh --web
-        fi
+    # Check if already authenticated with correct scopes
+    if gh auth status &>/dev/null && gh auth scope | grep -q "read:packages" && gh auth scope | grep -q "write:packages"; then
+        echo -e "${GREEN}Already authenticated with GitHub with correct scopes${NC}"
+    else
+        echo -e "${YELLOW}Please login to GitHub with organization access...${NC}"
+        gh auth login --scopes "read:packages,write:packages,repo,admin:org" --git-protocol ssh --web
     fi
 
     # Get GitHub token
@@ -347,7 +344,7 @@ setup_manifest() {
     
     MANIFEST_DIR="$HOME/.scholar-spark/manifest"
     # Use environment variable with fallback
-    MANIFEST_REPO="${DEV_MANIFEST_REPO:-https://github.com/Polyhistor/scholarSparkDevManifest.gitt}"
+    MANIFEST_REPO="${DEV_MANIFEST_REPO:-https://github.com/scholar-spark/scholarSparkDevManifest.gitt}"
     
     if [ -z "$DEV_MANIFEST_REPO" ]; then
         echo -e "${YELLOW}Warning: DEV_MANIFEST_REPO not set, using default repository${NC}"
@@ -500,15 +497,21 @@ apply_manifest() {
         exit 1
     }
     
-    # Pull chart with explicit output file
-    CHART_FILE="$CHART_NAME-$CHART_VERSION.tgz"
-    if ! helm pull "$CHART_REPO/$CHART_NAME" --version "$CHART_VERSION" --destination . ; then
+    # Replace variables in repository URL
+    CHART_REPO_PARSED=$(echo "$CHART_REPO" | \
+        sed "s/\${organisation}/$($YQ_PATH -r '.organisation' "$MANIFEST_FILE")/g" | \
+        sed "s/\${environment}/$($YQ_PATH -r '.environment' "$MANIFEST_FILE")/g")
+
+    # Use parsed repository URL
+    if ! helm pull "$CHART_REPO_PARSED/$CHART_NAME" --version "$CHART_VERSION" --destination . ; then
         echo -e "${RED}Failed to pull chart from repository${NC}"
-        echo -e "Repository: $CHART_REPO"
+        echo -e "Repository: $CHART_REPO_PARSED"
         echo -e "Chart: $CHART_NAME"
         echo -e "Version: $CHART_VERSION"
         exit 1
     fi
+
+    CHART_FILE="${CHART_NAME}-${CHART_VERSION}.tgz"
     
     # Verify chart file exists
     if [ ! -f "$CHART_FILE" ]; then
