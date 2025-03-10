@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: auth-service
+  namespace: scholar-spark-dev
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -12,6 +13,8 @@ spec:
       labels:
         app: auth-service
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: auth-service
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
