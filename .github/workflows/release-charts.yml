@@ -46,14 +46,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set lowercase repository name
+        run: echo "repository_lowercase=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository ,,}}/auth-service:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository ,,}}/auth-service:latest
+            ghcr.io/${{ github.repository_lowercase }}/auth-service:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_lowercase }}/auth-service:latest
 
       - name: Update Helm values.yaml
         run: |
