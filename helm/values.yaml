@@ -1,6 +1,6 @@
 # Default configuration
 image:
-  repository: auth-service
+  repository: ghcr.io/scholar-spark/scholarsparkauth/auth-service
   tag: latest
   pullPolicy: IfNotPresent
 
