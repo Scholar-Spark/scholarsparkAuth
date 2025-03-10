@@ -31,6 +31,7 @@ spec:
               value: "{{ .Values.jwt.secretKey }}"
             - name: REDIS_URL
               value: {{ .Values.redis.url }} 
+              
 
 apiVersion: v1
 kind: Service
