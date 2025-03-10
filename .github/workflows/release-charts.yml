@@ -55,8 +55,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_lowercase }}/auth-service:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_lowercase }}/auth-service:latest
+            ghcr.io/${{ env.repository_lowercase }}/auth-service:${{ steps.version.outputs.version }}
+            ghcr.io/${{ env.repository_lowercase }}/auth-service:latest
 
       - name: Update Helm values.yaml
         run: |
