@@ -34,17 +34,4 @@ spec:
               value: "{{ .Values.jwt.secretKey }}"
             - name: REDIS_URL
               value: {{ .Values.redis.url }} 
-              
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: auth-service
-  namespace: scholar-spark-dev
-spec:
-  selector:
-    app: auth-service
-  ports:
-    - port: {{ .Values.service.port }}
-      targetPort: 8000
-  type: {{ .Values.service.type }} 
+---

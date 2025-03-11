@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "auth-service"
-version = "2.1.0"
+version = "3.0.0"
 description = "Scholar Spark Authentication Service"
 authors = ["Pouya Ataei <pouya.ataei.7@gmail.com>"]
 readme = "README.md"

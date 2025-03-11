@@ -30,3 +30,25 @@ The FastAPI application includes:
 - A health check endpoint at `/health`
 
 Once running, you can access the API documentation at `http://localhost:8000/docs`
+
+## Deploying with Helm
+
+To deploy the auth service to Kubernetes using Helm:
+
+1. Install the Helm chart with your GitHub credentials for image pulling:
+
+```bash
+helm upgrade --install auth-service ./helm -n scholar-spark-dev \
+  --set imageCredentials.username=YOUR_GITHUB_USERNAME \
+  --set imageCredentials.password=YOUR_GITHUB_PAT
+```
+
+Replace `YOUR_GITHUB_USERNAME` with your GitHub username and `YOUR_GITHUB_PAT` with your GitHub Personal Access Token that has `read:packages` permissions.
+
+2. Verify the deployment:
+
+```bash
+kubectl get pods -n scholar-spark-dev
+```
+
+This approach passes the credentials directly via the command line rather than storing them in files, which is more secure for sensitive information.

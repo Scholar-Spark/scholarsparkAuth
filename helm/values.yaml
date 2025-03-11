@@ -4,6 +4,11 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# Add credentials section for GitHub Container Registry
+imageCredentials:
+  username: ""
+  password: ""
+
 replicaCount: 1
 
 service:
