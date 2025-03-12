@@ -47,7 +47,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Set lowercase repository name
-        run: echo "repository_lowercase=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        run: |
+          echo "repository_lowercase=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+          echo "Using repository: ${GITHUB_REPOSITORY,,}"
 
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
@@ -60,14 +62,14 @@ jobs:
 
       - name: Update Helm values.yaml
         run: |
-          yq eval ".image.repository = \"ghcr.io/${{ github.repository }}/auth-service\"" -i helm/values.yaml
+          yq eval ".image.repository = \"ghcr.io/${{ env.repository_lowercase }}/auth-service\"" -i helm/values.yaml
           yq eval ".image.tag = \"${{ steps.version.outputs.version }}\"" -i helm/values.yaml
 
       - name: Package and Push Chart
         run: |
           CHART_NAME=$(yq eval '.name' helm/Chart.yaml)
           helm package helm/
-          helm push ${CHART_NAME}-*.tgz oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts
+          helm push ${CHART_NAME}-*.tgz oci://ghcr.io/${{ env.repository_lowercase }}/charts
 
       - name: Output Release Info
         if: success()
@@ -75,4 +77,4 @@ jobs:
           CHART_NAME=$(yq eval '.name' helm/Chart.yaml)
           echo "Successfully published chart ${CHART_NAME} version ${{ steps.version.outputs.version }}"
           echo "You can install this chart using:"
-          echo "helm install my-release oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts/${CHART_NAME} --version ${{ steps.version.outputs.version }}"
+          echo "helm install my-release oci://ghcr.io/${{ env.repository_lowercase }}/charts/${CHART_NAME} --version ${{ steps.version.outputs.version }}"

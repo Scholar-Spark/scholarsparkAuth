@@ -17,7 +17,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: auth-service
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          image: {{ .Values.image.repository | lower }}:{{ .Values.image.tag }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 8000
